@@ -2,26 +2,26 @@ seed_everything: 42
 name: TRK-v8-3l-fast-fix-vec
 data:
   # hypatia
-  #train_dir: data/trackml/prepped/
-  #val_dir: data/trackml/prepped/
-  #test_dir: data/trackml/prepped/
-  #hit_eval_train: /share/rcifdata/svanstroud/hepattn/src/hepattn/experiments/trackml/logs/HC-v3_20250612-T220925/ckpts/epoch=015-val_loss=0.19298_train_eval.h5
-  #hit_eval_val: /share/rcifdata/svanstroud/hepattn/src/hepattn/experiments/trackml/logs/HC-v3_20250612-T220925/ckpts/epoch=015-val_loss=0.19298_val_eval.h5
-  #hit_eval_test: /share/rcifdata/svanstroud/hepattn/src/hepattn/experiments/trackml/logs/HC-v3_20250612-T220925/ckpts/epoch=015-val_loss=0.19298_test_eval.h5
+  train_dir: data/trackml/prepped/
+  val_dir: data/trackml/prepped/
+  test_dir: data/trackml/prepped/
+  hit_eval_train: /share/rcif2/ljohnson/hepattn/src/hepattn/experiments/trackml/logs/HC-v3_20250612-T220925/ckpts/epoch=015-val_loss=0.19298_train_eval.h5
+  hit_eval_val: /share/rcif2/ljohnson/hepattn/src/hepattn/experiments/trackml/logs/HC-v3_20250612-T220925/ckpts/epoch=015-val_loss=0.19298_val_eval.h5
+  hit_eval_test: /share/rcif2/ljohnson/hepattn/src/hepattn/experiments/trackml/logs/HC-v3_20250612-T220925/ckpts/epoch=015-val_loss=0.19298_test_eval.h5
 
-  # isambard
-  train_dir: /projects/u5du/pduckett/data_new/train/
-  val_dir: /projects/u5du/pduckett/data_new/val/
-  test_dir: /projects/u5du/pduckett/data_new/test/
-  hit_eval_train: /lus/lfs1aip2/projects/u5du/svanstroud/logs/HF-600MeV-eta2.5_20251208-T205400/ckpts/epoch=079-val_loss=0.11373_train_eval.h5
-  hit_eval_val: /lus/lfs1aip2/projects/u5du/svanstroud/logs/HF-600MeV-eta2.5_20251208-T205400/ckpts/epoch=079-val_loss=0.11373_val_eval.h5
-  hit_eval_test: /lus/lfs1aip2/projects/u5du/svanstroud/logs/HF-600MeV-eta2.5_20251208-T205400/ckpts/epoch=079-val_loss=0.11373_test_eval.h5
+  # # isambard
+  # train_dir: /projects/u5du/pduckett/data_new/train/
+  # val_dir: /projects/u5du/pduckett/data_new/val/
+  # test_dir: /projects/u5du/pduckett/data_new/test/
+  # hit_eval_train: /lus/lfs1aip2/projects/u5du/svanstroud/logs/HF-600MeV-eta2.5_20251208-T205400/ckpts/epoch=079-val_loss=0.11373_train_eval.h5
+  # hit_eval_val: /lus/lfs1aip2/projects/u5du/svanstroud/logs/HF-600MeV-eta2.5_20251208-T205400/ckpts/epoch=079-val_loss=0.11373_val_eval.h5
+  # hit_eval_test: /lus/lfs1aip2/projects/u5du/svanstroud/logs/HF-600MeV-eta2.5_20251208-T205400/ckpts/epoch=079-val_loss=0.11373_test_eval.h5
   hit_filter_threshold: 0.2
   
   num_workers: 15
-  num_train: -1
-  num_test: -1
-  num_val: -1
+  num_train: 50 # was -1: use whole dataset
+  num_test: 10 # was -1
+  num_val: 10 # was -1
 
   # Select only hits from these detector volumes
   # pix barrel: 8, pix endcap: 7, 9
@@ -75,12 +75,12 @@ data:
 
 trainer:
   # Training stuff here
-  max_epochs: 10
+  max_epochs: 1 # was 10
   accelerator: gpu
   devices: 2
   precision: bf16-mixed
   log_every_n_steps: 50
-  default_root_dir: /projects/u5du/svanstroud/logs/
+  default_root_dir: /share/rcif2/ljohnson/hepattn/src/hepattn/experiments/trackml/logs/
   gradient_clip_val: 0.1
   enable_progress_bar: true
 

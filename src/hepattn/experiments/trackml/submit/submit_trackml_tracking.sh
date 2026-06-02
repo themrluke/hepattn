@@ -8,10 +8,18 @@
 #SBATCH --ntasks-per-node=1         # must match number of devices
 #SBATCH --cpus-per-task=10
 #SBATCH --mem=50G
-#SBATCH --output=/share/rcifdata/svanstroud/slurm_logs/slurm-%j.%x.out
+#SBATCH --output=/share/rcif2/ljohnson/slurm_logs/slurm-%j.%x.out
 
 
 # Comet variables
+
+# ==== NEW =======
+export COMET_API_KEY="kwIU9113DV5byn4GBoQZcnv2o"
+export COMET_WORKSPACE="themrluke" # Comet username
+export COMET_PROJECT_NAME="trackml_tracking" # Must match logger project in tracking.yaml
+echo $COMET_WORKSPACE
+# ================
+
 echo "Setting comet experiment key"
 timestamp=$( date +%s )
 COMET_EXPERIMENT_KEY=$timestamp
@@ -25,7 +33,7 @@ echo "CPU count: $(cat /proc/cpuinfo | awk '/^processor/{print $3}' | tail -1)"
 echo "CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
 
 # Move to workdir
-cd /share/rcifdata/svanstroud/hepattn/src/hepattn/experiments/trackml/
+cd /share/rcif2/ljohnson/hepattn/src/hepattn/experiments/trackml/
 echo "Moved dir, now in: ${PWD}"
 
 # Set tmpdir
@@ -48,7 +56,7 @@ PYTORCH_CMD="python run_tracking.py fit --config configs/tracking.yaml --trainer
 PIXI_CMD="pixi run $PYTORCH_CMD"
 
 # Apptainer command that runs the pixi command inside the pixi apptainer image
-APPTAINER_CMD="srun apptainer run --nv --bind /share/rcifdata/ /share/rcifdata/svanstroud/hepattn/pixi.sif $PIXI_CMD"
+APPTAINER_CMD="srun apptainer run --nv --bind /share/rcif2/ /share/rcif2/ljohnson/hepattn/pixi.sif $PIXI_CMD"
 
 # Run the final command
 echo "Running command: $APPTAINER_CMD"
