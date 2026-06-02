@@ -8,7 +8,7 @@ requires-python = "== 3.12"
 version = "0.2.0"
 
 dependencies = [
-    "packaging>=24.1,<25",
+    "packaging>=24.1,<27",
     "jupyter>=1.1.1,<2",
     "ipykernel>=6.30.1,<7",
     "wheel>=0.45.1,<0.46",
@@ -23,8 +23,8 @@ dependencies = [
     "matplotlib>=3.10.6,<4",
     "lightning==2.5.2",
     "comet-ml==3.50.0",
-    "pandas>=2.3.2,<3",
-    "pyarrow>=21.0.0,<22",
+    "pandas>=2.3.2,<4",
+    "pyarrow>=21.0.0,<24",
     "jsonargparse[signatures]==4.40.1",
     "torchjd>=0.7.0,<0.8",
     "lion-pytorch>=0.2.3,<0.3",
@@ -60,10 +60,12 @@ platforms = ["linux-64", "linux-aarch64"]
 
 [tool.pixi.pypi-dependencies]
 hepattn = { path = ".", editable = true }
+datasets = ">=4.4.1,<5"
+fsspec = { version = ">=2025.10.0,<2027", extras = ["http"] }
 
 [tool.pixi.pypi-options]
 no-build-isolation = ["flash-attn"]
-extra-index-urls = ["https://download.pytorch.org/whl/cu128"]
+# extra-index-urls = ["https://download.pytorch.org/whl/cu128"]
 
 [tool.pixi.feature.gpu.pypi-dependencies]
 torch = { version = "==2.9.1", index = "https://download.pytorch.org/whl/cu128"}
@@ -111,7 +113,7 @@ preview = true
 
 [tool.ruff.lint]
 select = ["ALL"]
-ignore = ["G", "D100", "D101", "D102", "D103",  "D104", "D105", "D106", "D107", "D205", "ANN", "PLW", "FBT", "EM",  "PLR2004", "PT018", "COM812", "CPY001", "TRY003", "S101", "N812", "PLR0913", "PLR0917", "DOC201", "INP001", "PLR6301", "T201", "TD002", "TD003", "FIX002", "ARG002", "C901", "PLR0914", "PLR0912", "PLR0915", "PT011", "ERA001", "PGH004", "PLC0206", "S311", "PLR0911", "PLR6104", "S404", "S603", "B028", "PLR1702",]
+ignore = ["G", "D100", "D101", "D102", "D103",  "D104", "D105", "D106", "D107", "D205", "ANN", "PLW", "FBT", "EM",  "PLR2004", "PT018", "COM812", "CPY001", "TRY003", "S101", "N812", "PLR0913", "PLR0917", "DOC201", "INP001", "PLR6301", "T201", "TD002", "TD003", "FIX002", "ARG002", "C901", "PLR0914", "PLR0912", "PLR0915", "PT011", "ERA001", "PGH004", "PLC0206", "S311", "PLR0911", "PLR6104", "S404", "S603", "B028", "PLR1702", "N806", "N806"]
 #isort.split-on-trailing-comma=false
 pydocstyle.convention = "google"
 
