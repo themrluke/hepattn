@@ -11,6 +11,8 @@ import torch
 from lightning import LightningDataModule
 from torch.utils.data import DataLoader, Dataset
 
+from hepattn.utils.tensor_utils import pad_to_size
+
 
 class ColliderMLDataset(Dataset):
     CALO_SUBSYSTEMS = ("ecb", "ece", "hcb", "hce")
@@ -67,6 +69,9 @@ class ColliderMLDataset(Dataset):
         return_tracks: bool = True,
         event_type: str = "ttbar",
         build_calohit_associations: bool = True,
+        sihit_volume_ids: list[int] | None = None,
+        sihit_max_abs_eta: float | None = None,
+        max_num_particles: int = 1024,
         debug: bool = False,
     ):
         super().__init__()
@@ -142,6 +147,12 @@ class ColliderMLDataset(Dataset):
         self.return_tracks = return_tracks
         self.event_type = event_type
         self.build_calohit_associations = build_calohit_associations
+
+        # Sihit selection cuts
+        self.sihit_volume_ids = sihit_volume_ids
+        self.sihit_max_abs_eta = sihit_max_abs_eta
+        self.max_num_particles = max_num_particles
+
         self.debug = debug
 
     @staticmethod
@@ -585,12 +596,23 @@ class ColliderMLDataset(Dataset):
             sihits,
             "sihit",
             int_fields={"particle_id"},
+            skip_fields={"event_id"},
             default_dtype=torch.float32,
         )
         self._scale_xyz_inplace(inputs, "sihit", scale=1e-3)
         self._add_cylindrical_coords_inplace(inputs, "sihit")
         inputs["sihit_valid"] = self._valid_mask_like(inputs["sihit_x"])
         return inputs
+
+    def _build_sihit_mask(self, inputs: dict[str, torch.Tensor]) -> torch.Tensor:
+        mask = torch.ones(inputs["sihit_x"].shape[0], dtype=torch.bool)
+        if self.sihit_volume_ids is not None:
+            volume_ids = inputs["sihit_volume_id"].to(torch.int64)
+            allowed = torch.tensor(self.sihit_volume_ids, dtype=torch.int64)
+            mask &= torch.isin(volume_ids, allowed)
+        if self.sihit_max_abs_eta is not None:
+            mask &= torch.abs(inputs["sihit_eta"]) <= self.sihit_max_abs_eta
+        return mask
 
     def _read_calohits(self, particle_path: Path, event_idx: int) -> ak.Record:
         t_calo_read = perf_counter()
@@ -770,24 +792,18 @@ class ColliderMLDataset(Dataset):
         targets["track_sihit_indices"] = track_sihit_indices
         targets["track_sihit_shape"] = track_sihit_shape
 
-    @staticmethod
-    def _pad_particle_targets_inplace(targets: dict[str, torch.Tensor]) -> None:
-        particle_keys = [
-            k for k in targets if k.startswith("particle_") and not k.startswith("particle_sihit_") and not k.startswith("particle_calohit_")
-        ]
-        if not particle_keys:
-            return
-
-        pad_size = max(int(targets[k].size(0)) for k in particle_keys)
-        for key in particle_keys:
-            values = targets[key]
-            extra = pad_size - int(values.size(0))
-            if extra <= 0:
+    def _pad_particle_targets_inplace(self, targets: dict[str, torch.Tensor]) -> None:
+        n = self.max_num_particles
+        for key, values in targets.items():
+            if not key.startswith("particle_"):
                 continue
-
-            pad_shape = (extra, *values.shape[1:])
+            # Skip sparse CSR tensors — they cannot be padded along dim 0 like dense tensors
+            if key.startswith("particle_sihit_indptr") or key.startswith("particle_sihit_indices") or \
+               key.startswith("particle_sihit_shape") or key.startswith("particle_calohit_"):
+                continue
             pad_value = False if values.dtype is torch.bool else 0
-            targets[key] = torch.cat([values, values.new_full(pad_shape, pad_value)], dim=0)
+            target_shape = (n, *(-1,) * (values.dim() - 1))
+            targets[key] = pad_to_size(values, target_shape, pad_value)
 
     def load_event(self, sample_id):
         t0 = perf_counter()
@@ -813,6 +829,12 @@ class ColliderMLDataset(Dataset):
 
         targets["particle_valid"] = self._valid_mask_like(targets["particle_pt"])
         inputs = self._build_sihit_inputs(sihits)
+
+        sihit_mask = self._build_sihit_mask(inputs)
+        if not sihit_mask.all():
+            self._apply_mask_to_prefixed_keys(inputs, "sihit_", sihit_mask)
+            self._debug(f"after sihit cuts: n_sihits={sihit_mask.sum()}")
+
         targets["sihit_valid"] = inputs["sihit_valid"]
 
         t_assoc = perf_counter()
@@ -840,6 +862,16 @@ class ColliderMLDataset(Dataset):
             particle_valid,
             skip_prefixes=("particle_sihit_", "particle_calohit_"),
         )
+
+        # Truncate to max_num_particles if needed, keeping highest-pT particles
+        num_particles = int(targets["particle_particle_id"].size(0))
+        if num_particles > self.max_num_particles:
+            self._debug(f"truncating {num_particles} particles to max_num_particles={self.max_num_particles}")
+            pt_order = torch.argsort(targets["particle_pt"], descending=True)
+            truncate_mask = torch.zeros(num_particles, dtype=torch.bool)
+            truncate_mask[pt_order[: self.max_num_particles]] = True
+            self._apply_mask_to_prefixed_keys(targets, "particle_", truncate_mask, skip_prefixes=("particle_sihit_", "particle_calohit_"))
+
         particle_sihit_indptr, particle_sihit_indices, particle_sihit_shape, particle_num_sihits = self._build_particle_sihit_fields(
             targets["particle_particle_id"],
             inputs["sihit_particle_id"],
@@ -871,6 +903,17 @@ class ColliderMLDataset(Dataset):
         targets["particle_sihit_indices"] = particle_sihit_indices
         targets["particle_sihit_shape"] = particle_sihit_shape
         targets["particle_num_sihits"] = particle_num_sihits
+
+        num_particles = int(particle_sihit_shape[0].item())
+        num_sihits = int(particle_sihit_shape[1].item())
+        particle_sihit_valid = torch.zeros(num_particles, num_sihits, dtype=torch.bool)
+        if particle_sihit_indices.numel() > 0:
+            row_ids = torch.repeat_interleave(
+                torch.arange(num_particles),
+                torch.diff(particle_sihit_indptr).to(torch.int64),
+            )
+            particle_sihit_valid[row_ids, particle_sihit_indices] = True
+        targets["particle_sihit_valid"] = particle_sihit_valid
 
         # Return the calorimeter hit info if requested
         if self.return_calohits:
