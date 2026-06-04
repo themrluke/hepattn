@@ -1,12 +1,26 @@
 import torch
 from torch import Tensor, nn
 
+SPECIAL_TARGET_INPUT_NAMES = {
+    "paper_truth_particle_id": "hit",
+    "paper_truth_weight": "hit",
+}
+
 
 class Sorter(nn.Module):
     def __init__(self, input_sort_field: str) -> None:
         super().__init__()
         self.input_sort_field = input_sort_field
         self.input_names = None  # set by MaskFormer
+
+    @staticmethod
+    def _key_has_input_token(key: str, input_name: str) -> bool:
+        """Match input-aligned tensors by underscore-delimited token, not substring.
+
+        This avoids false positives such as matching `input_name="hit"` against
+        unrelated keys like `paper_all_particle_n_hits`.
+        """
+        return input_name in key.split("_")
 
     def sort_inputs(self, inputs: dict[str, Tensor]) -> dict[str, Tensor]:
         input_names = [*self.input_names, "key"]
@@ -17,7 +31,7 @@ class Sorter(nn.Module):
             sort_idxs[input_name] = sort_idx
 
             for key, x in inputs.items():
-                if x is None or input_name not in key:
+                if x is None or not self._key_has_input_token(key, input_name):
                     continue
 
                 # embeddings
@@ -51,7 +65,8 @@ class Sorter(nn.Module):
             sort_idx = torch.argsort(sort_fields[f"{input_name}_{self.input_sort_field}"], dim=-1)
 
             for key, x in targets.items():
-                if x is None or input_name not in key:
+                special_input_name = SPECIAL_TARGET_INPUT_NAMES.get(key)
+                if x is None or (not self._key_has_input_token(key, input_name) and special_input_name != input_name):
                     continue
 
                 # sort target mask
