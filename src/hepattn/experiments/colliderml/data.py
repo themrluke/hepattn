@@ -914,6 +914,7 @@ class ColliderMLDataset(Dataset):
             )
             particle_sihit_valid[row_ids, particle_sihit_indices] = True
         targets["particle_sihit_valid"] = particle_sihit_valid
+        targets["sihit_on_valid_particle"] = particle_sihit_valid.any(dim=0)
 
         # Return the calorimeter hit info if requested
         if self.return_calohits:

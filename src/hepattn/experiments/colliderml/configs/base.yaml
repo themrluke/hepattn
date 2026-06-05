@@ -15,8 +15,8 @@ data:
   num_test: 1000
   num_val: 100
 
-  # Minimum pT for a particle to be deemed reconstructve in GeV
-  particle_min_pt: 0.5
+  # Minimum pT for a particle to be deemed reconstructable in GeV
+  particle_min_pt: 0.9
   particle_max_abs_eta: 1.0 # Was 4.0
 
   # Optional per-particle-type hit-content cuts.
