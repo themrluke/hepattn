@@ -109,6 +109,44 @@ def _plot_particle_calohits(ax, data, x, y, batch_idx: int, cycler, particle_ind
         )
 
 
+def _plot_sihits_by_volume(
+    ax,
+    data,
+    x,
+    y,
+    batch_idx: int,
+    add_legend: bool = False,
+    hit_mask: torch.Tensor | None = None,
+) -> None:
+    volume_id = data["sihit_volume_id"][batch_idx].to(torch.int64)
+    colormap = plt.cm.tab20
+
+    if hit_mask is not None:
+        volume_id = volume_id[hit_mask]
+        x = x[hit_mask]
+        y = y[hit_mask]
+
+    if volume_id.numel() == 0:
+        return
+
+    unique_volume_ids = torch.unique(volume_id, sorted=True).flip(0).tolist()
+    if 17 in unique_volume_ids:
+        unique_volume_ids.remove(17)
+        unique_volume_ids.append(17)
+    for idx, vol_id in enumerate(unique_volume_ids):
+        volume_mask = volume_id == vol_id
+        label = f"volume {vol_id}" if add_legend else None
+        ax.scatter(
+            x[volume_mask],
+            y[volume_mask],
+            color=colormap(idx % colormap.N),
+            marker=".",
+            alpha=0.7,
+            s=1.0,
+            label=label,
+        )
+
+
 def _plot_calohits_by_detector(
     ax,
     data,
@@ -282,6 +320,7 @@ def plot_colliderml_event(
     data,
     batch_idx: int = 0,
     plot_sihits: bool = False,
+    plot_sihits_by_volume: bool = False,
     plot_particle_sihits: bool = False,
     plot_track_sihits: bool = False,
     plot_calohits: bool = False,
@@ -296,6 +335,7 @@ def plot_colliderml_event(
 ):
     if not any([
         plot_sihits,
+        plot_sihits_by_volume,
         plot_particle_sihits,
         plot_track_sihits,
         plot_calohits,
@@ -322,7 +362,7 @@ def plot_colliderml_event(
         particle_indices = _select_top_particle_indices(data, batch_idx, top_n_particles_by_pt)
 
     selected_particle_sihit_mask = None
-    if particle_indices is not None and (plot_sihits or plot_particle_sihits):
+    if particle_indices is not None and (plot_sihits or plot_sihits_by_volume or plot_particle_sihits):
         selected_particle_sihit_mask = _build_csr_selected_hit_mask(
             data["particle_sihit_indptr"][batch_idx],
             data["particle_sihit_indices"][batch_idx],
@@ -363,9 +403,19 @@ def plot_colliderml_event(
         si_y = data[f"sihit_{y_field}"][batch_idx]
         calo_y = data[f"calohit_{y_field}"][batch_idx]
 
-        if plot_sihits or plot_particle_sihits or plot_track_sihits:
+        if plot_sihits or plot_sihits_by_volume or plot_particle_sihits or plot_track_sihits:
             si_x = data[f"sihit_{x_field}"][batch_idx]
 
+            if plot_sihits_by_volume:
+                _plot_sihits_by_volume(
+                    ax[ax_idx],
+                    data,
+                    si_x,
+                    si_y,
+                    batch_idx,
+                    add_legend=(ax_idx == 0),
+                    hit_mask=selected_particle_sihit_mask,
+                )
             if plot_sihits:
                 if selected_particle_sihit_mask is None:
                     ax[ax_idx].scatter(si_x, si_y, alpha=0.25, s=1.0, color="black")
@@ -449,6 +499,8 @@ def plot_colliderml_event(
         ax[ax_idx].set_xlabel(x_label)
         ax[ax_idx].set_ylabel(y_label)
 
+    if plot_sihits_by_volume:
+        ax[0].legend(loc="upper right", frameon=False, fontsize=7, markerscale=3.0, ncol=2)
     if plot_calohits_by_detector:
         ax[0].legend(loc="upper right", frameon=False, fontsize=7, markerscale=3.0, ncol=2)
 

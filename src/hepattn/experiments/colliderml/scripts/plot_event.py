@@ -101,6 +101,16 @@ plot_top_particles_dir = plot_base_dir / f"top{top_n_particles_by_pt}_particles"
 plot_all_particles_round = bool(config.get("plot_all_particles_round", False))
 plot_top_particles_round = bool(config.get("plot_top_particles_round", True))
 
+volume_plot_configs = [
+    (
+        "sihits_by_volume.png",
+        "Plotting sihits coloured by volume ID",
+        {
+            "plot_sihits_by_volume": True,
+        },
+    ),
+]
+
 particle_plot_configs = [
     (
         "particles.png",
@@ -174,6 +184,9 @@ track_plot_configs = [
         },
     ),
 ]
+
+# Volume ID plot always runs with all hits (no particle limit, no hit mask)
+_run_plot_round(event_data, plot_top_particles_dir, volume_plot_configs, top_n_particles_by_pt=None)
 
 if plot_all_particles_round:
     _run_plot_round(
