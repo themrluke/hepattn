@@ -49,14 +49,14 @@ data:
 
   # Sihit selection cuts — restrict to pixel barrel (volume 17) to limit memory usage
   sihit_volume_ids: [17]
-  sihit_max_abs_eta: null
+  sihit_max_abs_eta: 1.0
 
   # Must equal num_queries in the model — all particle targets are padded to this size
   max_num_particles:  &num_objects 1024
 
 # Training stuff here
 trainer:
-  max_epochs: 1 # was 10
+  max_epochs: 10 # was 10
   accelerator: gpu
   devices: 1
   precision: bf16-mixed
