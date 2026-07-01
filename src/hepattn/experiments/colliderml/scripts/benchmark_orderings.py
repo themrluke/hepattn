@@ -1,0 +1,213 @@
+"""Benchmark hit-ordering techniques for ColliderML tracking.
+
+For each ordering (random / phi / hilbert / lsh) we sort every event's silicon
+hits, then for each reconstructable truth particle measure how tightly its hits
+sit together in the sorted sequence:
+
+    spread(particle) = max_position - min_position   (over that particle's hits)
+
+A small spread means the particle's hits land close together, so a local /
+sliding-window attention of a given size can "see" them all. We report, pooled
+over all particles in all events:
+
+    mean, p50, p90, p99, max   -- the index-spread distribution
+    c@128, c@256, c@512, c@1024 -- containment: fraction of particles whose hits
+                                   fit within an attention window of that size
+
+Containment threshold per window W depends on --window-metric:
+    span   (default): contained iff spread <= W          (index span within W)
+    block           : contained iff spread <= W - 1      (fits in W consecutive slots)
+    mutual          : contained iff spread <= W // 2     (matches this repo's
+                      sliding_window_mask(W), half-width W//2 each side)
+
+The sorted sequence is always treated as circular (a ring), matching the
+deployed model's `window_wrap: true`: a particle whose hits straddle the
+phi = +/-pi seam is joined back up rather than being split to opposite ends of
+the sequence. There is no flag to turn this off.
+
+Example:
+    python scripts/benchmark_orderings.py --num-events 100
+    python scripts/benchmark_orderings.py --split val --num-events 200 \
+        --window-metric mutual --csv orderings.csv
+"""
+
+from __future__ import annotations
+
+import argparse
+import inspect
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import yaml
+
+from hepattn.experiments.colliderml.data import ColliderMLDataset
+from hepattn.experiments.colliderml.scripts.orderings import SORTERS
+
+EXPERIMENT_DIR = Path(__file__).resolve().parents[1]
+DEFAULT_CONFIG = EXPERIMENT_DIR / "configs" / "base.yaml"
+
+SPLIT_TO_KEYS = {
+    "train": ("train_dir", "num_train"),
+    "val": ("val_dir", "num_val"),
+    "test": ("test_dir", "num_test"),
+}
+
+
+def build_dataset(config_path: Path, split: str, num_events: int | None) -> ColliderMLDataset:
+    """Instantiate the real tracking dataset straight from a training config."""
+    with config_path.open() as f:
+        config = yaml.safe_load(f)
+    data_cfg = config["data"]
+
+    dir_key, num_key = SPLIT_TO_KEYS[split]
+    dirpath = data_cfg[dir_key]
+    if num_events is None:
+        num_events = data_cfg.get(num_key, -1)
+
+    allowed = set(inspect.signature(ColliderMLDataset.__init__).parameters)
+    kwargs = {k: v for k, v in data_cfg.items() if k in allowed}
+    # Force tracking mode so we get the particle<->sihit association, and drop
+    # collections we don't need for a geometry-only benchmark.
+    kwargs.update(dirpath=dirpath, num_events=num_events, hit_filter=False, return_calohits=False, return_tracks=False)
+    return ColliderMLDataset(**kwargs)
+
+
+def particle_spreads(order: np.ndarray, indptr: np.ndarray, indices: np.ndarray, min_hits: int, num_hits: int) -> np.ndarray:
+    """Circular index spread of each particle's hits under a given ordering.
+
+    ``rank[h]`` is the position of hit ``h`` in the sorted sequence. The sequence
+    is treated as a ring (matching the model's ``window_wrap: true``), so a
+    particle's spread is the shortest arc covering all of its hits: the ring
+    length minus the largest gap between its consecutive hits, where the seam gap
+    (across the phi = +/-pi wrap) is included as one of the candidate gaps.
+    Fully vectorised over particles.
+    """
+    rank = np.empty(num_hits, dtype=np.int64)
+    rank[order] = np.arange(num_hits, dtype=np.int64)
+
+    counts = np.diff(indptr)
+    keep = counts >= min_hits
+    if not keep.any():
+        return np.zeros(0, dtype=np.int64)
+
+    num_particles = counts.shape[0]
+    pos = rank[indices]
+    pid = np.repeat(np.arange(num_particles), counts)
+
+    # Sort positions within each particle segment (primary key pid, then pos).
+    seg_order = np.argsort(pid.astype(np.int64) * (num_hits + 1) + pos, kind="stable")
+    pid_s = pid[seg_order]
+    pos_s = pos[seg_order]
+
+    # Largest gap between a particle's consecutive hits (interior gaps only).
+    diffs = pos_s[1:] - pos_s[:-1]
+    same_seg = pid_s[1:] == pid_s[:-1]
+    max_gap = np.zeros(num_particles, dtype=np.int64)
+    np.maximum.at(max_gap, pid_s[1:][same_seg], diffs[same_seg])
+
+    pmin = np.full(num_particles, num_hits, dtype=np.int64)
+    pmax = np.full(num_particles, -1, dtype=np.int64)
+    np.minimum.at(pmin, pid, pos)
+    np.maximum.at(pmax, pid, pos)
+    seam_gap = num_hits - (pmax - pmin)  # gap across the wrap seam
+
+    largest_gap = np.maximum(max_gap, seam_gap)
+    circular_spread = num_hits - largest_gap
+    return circular_spread[keep]
+
+
+def threshold(window: int, metric: str) -> int:
+    if metric == "span":
+        return window
+    if metric == "block":
+        return window - 1
+    if metric == "mutual":
+        return window // 2
+    raise ValueError(f"Unknown window-metric: {metric}")
+
+
+def summarise(spreads: np.ndarray, windows: list[int], metric: str) -> dict[str, float]:
+    row = {
+        "mean": float(np.mean(spreads)),
+        "p50": float(np.percentile(spreads, 50)),
+        "p90": float(np.percentile(spreads, 90)),
+        "p99": float(np.percentile(spreads, 99)),
+        "max": float(np.max(spreads)),
+    }
+    for w in windows:
+        row[f"c@{w}"] = float(np.mean(spreads <= threshold(w, metric)))
+    return row
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--config", type=Path, default=DEFAULT_CONFIG, help="Training config to pull data settings from.")
+    p.add_argument("--split", choices=list(SPLIT_TO_KEYS), default="val", help="Which data split to benchmark on.")
+    p.add_argument("--num-events", type=int, default=100, help="Number of events (-1 for all; default 100).")
+    p.add_argument("--sorters", nargs="+", default=list(SORTERS), choices=list(SORTERS), help="Subset of orderings to benchmark.")
+    p.add_argument("--windows", nargs="+", type=int, default=[128, 256, 512, 1024], help="Attention window sizes for containment.")
+    p.add_argument("--window-metric", choices=["span", "block", "mutual"], default="span", help="Containment definition (see module docstring).")
+    p.add_argument("--min-hits", type=int, default=2, help="Ignore particles with fewer surviving sihits than this.")
+    p.add_argument("--seed", type=int, default=0, help="Seed for the random and lsh orderings.")
+    p.add_argument("--csv", type=Path, default=None, help="Optional path to also write the table as CSV.")
+    return p.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    num_events = None if args.num_events == -1 else args.num_events
+    dataset = build_dataset(args.config, args.split, num_events)
+    n = len(dataset)
+
+    rng = np.random.default_rng(args.seed)
+    spreads: dict[str, list[np.ndarray]] = {name: [] for name in args.sorters}
+
+    for i in range(n):
+        inputs, targets = dataset.load_event(dataset.sample_ids[i])
+        eta = inputs["sihit_eta"].numpy()
+        phi = inputs["sihit_phi"].numpy()
+        num_hits = eta.shape[0]
+        indptr = targets["particle_sihit_indptr"].numpy()
+        indices = targets["particle_sihit_indices"].numpy()
+        if num_hits == 0 or indices.size == 0:
+            continue
+
+        for name in args.sorters:
+            order = SORTERS[name](eta, phi, rng)
+            s = particle_spreads(order, indptr, indices, args.min_hits, num_hits)
+            if s.size:
+                spreads[name].append(s)
+
+        if (i + 1) % 20 == 0 or i + 1 == n:
+            print(f"  processed {i + 1}/{n} events", flush=True)
+
+    rows = {}
+    n_particles = 0
+    for name in args.sorters:
+        pooled = np.concatenate(spreads[name]) if spreads[name] else np.zeros(0, dtype=np.int64)
+        if pooled.size == 0:
+            print(f"WARNING: no particles passed the cuts for sorter '{name}'")
+            continue
+        n_particles = pooled.size
+        rows[name] = summarise(pooled, args.windows, args.window_metric)
+
+    table = pd.DataFrame.from_dict(rows, orient="index")
+    table.index.name = "sorter"
+
+    spread_cols = ["mean", "p50", "p90", "p99", "max"]
+    fmt = {c: "{:.1f}".format for c in spread_cols}
+    fmt.update({f"c@{w}": "{:.3f}".format for w in args.windows})
+
+    print()
+    print(f"ColliderML hit-ordering benchmark  |  split={args.split}  events={n}  particles={n_particles:,}")
+    print(f"spread = circular hit-position span  |  containment metric='{args.window_metric}'  min_hits={args.min_hits}")
+    print(table.to_string(formatters=fmt))
+
+    if args.csv is not None:
+        table.to_csv(args.csv)
+        print(f"\nWrote {args.csv}")
+
+
+if __name__ == "__main__":
+    main()
