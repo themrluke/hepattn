@@ -12,6 +12,12 @@ Available orderings (see ``SORTERS``):
     - ``hilbert``         : Hilbert space-filling curve over (eta, phi).
     - ``lsh``             : random-projection strip LSH over (eta, phi).
 
+Only ``phi`` is periodic: sorting by the azimuthal angle maps the circle onto
+the (wrapped) 1D sequence, so phi = +/-pi is healed by the model's
+``window_wrap: true``. The 2D orderings (``hilbert``, ``lsh``) treat phi as a
+plain linear coordinate; a 1D window cannot heal the interior phi crossings a
+2D curve makes, so no periodic handling is applied to them.
+
 All orderings are deterministic given the passed ``numpy`` random generator.
 """
 
