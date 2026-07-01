@@ -33,9 +33,17 @@ Example:
 
 from __future__ import annotations
 
+import os
+
+# Keep native math/IO libraries single-threaded per process, so that N parallel
+# worker processes don't each spawn a full thread pool and thrash the CPUs
+# (N_workers x N_cores threads all contending). Must be set before numpy / torch
+# / pyarrow are imported to take effect.
+for _thread_var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+    os.environ.setdefault(_thread_var, "1")
+
 import argparse
 import inspect
-import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
@@ -163,6 +171,18 @@ _WORKER: dict = {}
 
 
 def _init_worker(config_path: Path, split: str, num_events: int | None, sorter_names: list[str], min_hits: int, seed: int) -> None:
+    # Belt-and-braces: also cap the runtime-configurable thread pools per process.
+    import torch
+
+    torch.set_num_threads(1)
+    try:
+        import pyarrow as pa
+
+        pa.set_cpu_count(1)
+        pa.set_io_thread_count(1)
+    except Exception:  # pyarrow thread API is best-effort
+        pass
+
     _WORKER.update(
         dataset=build_dataset(config_path, split, num_events),
         sorters=sorter_names,
