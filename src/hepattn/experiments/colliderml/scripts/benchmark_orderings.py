@@ -35,6 +35,8 @@ from __future__ import annotations
 
 import argparse
 import inspect
+import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
@@ -43,6 +45,13 @@ import yaml
 
 from hepattn.experiments.colliderml.data import ColliderMLDataset
 from hepattn.experiments.colliderml.scripts.orderings import SORTERS
+
+try:
+    from tqdm import tqdm
+except ImportError:  # pragma: no cover - tqdm is normally available
+
+    def tqdm(iterable, **kwargs):  # type: ignore[misc]
+        return iterable
 
 EXPERIMENT_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = EXPERIMENT_DIR / "configs" / "base.yaml"
@@ -140,6 +149,56 @@ def summarise(spreads: np.ndarray, windows: list[int], metric: str) -> dict[str,
     return row
 
 
+def available_cpus() -> int:
+    """CPUs actually available to this process (respects cgroup/SLURM affinity)."""
+    try:
+        return len(os.sched_getaffinity(0))
+    except AttributeError:  # not available on all platforms
+        return os.cpu_count() or 1
+
+
+# Per-process state. Built once per worker (or once in the main process for the
+# serial path) rather than shipped across the pool, since the dataset is heavy.
+_WORKER: dict = {}
+
+
+def _init_worker(config_path: Path, split: str, num_events: int | None, sorter_names: list[str], min_hits: int, seed: int) -> None:
+    _WORKER.update(
+        dataset=build_dataset(config_path, split, num_events),
+        sorters=sorter_names,
+        min_hits=min_hits,
+        seed=seed,
+    )
+
+
+def event_spreads(idx: int) -> dict[str, np.ndarray]:
+    """Per-particle spread arrays for one event, keyed by sorter.
+
+    Reads per-process state set by ``_init_worker``. The RNG is seeded per event
+    as (seed, sample_id) so the random/lsh orderings are reproducible and
+    independent of worker count or event ordering.
+    """
+    dataset = _WORKER["dataset"]
+    sample_id = dataset.sample_ids[idx]
+    inputs, targets = dataset.load_event(sample_id)
+    eta = inputs["sihit_eta"].numpy()
+    phi = inputs["sihit_phi"].numpy()
+    num_hits = eta.shape[0]
+    indptr = targets["particle_sihit_indptr"].numpy()
+    indices = targets["particle_sihit_indices"].numpy()
+
+    empty = np.zeros(0, dtype=np.int64)
+    if num_hits == 0 or indices.size == 0:
+        return {name: empty for name in _WORKER["sorters"]}
+
+    rng = np.random.default_rng([_WORKER["seed"], int(sample_id)])
+    out = {}
+    for name in _WORKER["sorters"]:
+        order = SORTERS[name](eta, phi, rng)
+        out[name] = particle_spreads(order, indptr, indices, _WORKER["min_hits"], num_hits)
+    return out
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--config", type=Path, default=DEFAULT_CONFIG, help="Training config to pull data settings from.")
@@ -150,6 +209,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--window-metric", choices=["span", "block", "mutual"], default="span", help="Containment definition (see module docstring).")
     p.add_argument("--min-hits", type=int, default=2, help="Ignore particles with fewer surviving sihits than this.")
     p.add_argument("--seed", type=int, default=0, help="Seed for the random and lsh orderings.")
+    p.add_argument("--workers", type=int, default=1, help="Parallel worker processes across events (default 1 = serial; -1 = all available CPUs).")
     p.add_argument("--csv", type=Path, default=None, help="Optional path to also write the table as CSV.")
     return p.parse_args()
 
@@ -157,30 +217,33 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     num_events = None if args.num_events == -1 else args.num_events
-    dataset = build_dataset(args.config, args.split, num_events)
-    n = len(dataset)
+    init_args = (args.config, args.split, num_events, args.sorters, args.min_hits, args.seed)
 
-    rng = np.random.default_rng(args.seed)
+    # Build once up front (also gives us the event count n).
+    _init_worker(*init_args)
+    n = len(_WORKER["dataset"])
+
+    workers = available_cpus() if args.workers == -1 else max(1, args.workers)
+    workers = min(workers, n)  # no point spawning more workers than events
+
     spreads: dict[str, list[np.ndarray]] = {name: [] for name in args.sorters}
 
-    for i in range(n):
-        inputs, targets = dataset.load_event(dataset.sample_ids[i])
-        eta = inputs["sihit_eta"].numpy()
-        phi = inputs["sihit_phi"].numpy()
-        num_hits = eta.shape[0]
-        indptr = targets["particle_sihit_indptr"].numpy()
-        indices = targets["particle_sihit_indices"].numpy()
-        if num_hits == 0 or indices.size == 0:
-            continue
+    def accumulate(res: dict[str, np.ndarray]) -> None:
+        for name, arr in res.items():
+            if arr.size:
+                spreads[name].append(arr)
 
-        for name in args.sorters:
-            order = SORTERS[name](eta, phi, rng)
-            s = particle_spreads(order, indptr, indices, args.min_hits, num_hits)
-            if s.size:
-                spreads[name].append(s)
-
-        if (i + 1) % 20 == 0 or i + 1 == n:
-            print(f"  processed {i + 1}/{n} events", flush=True)
+    if workers > 1:
+        print(f"Using {workers} worker processes (building per-worker datasets first)...", flush=True)
+        # submit + as_completed gives smooth per-event progress (results pooled,
+        # so completion order doesn't matter) rather than jumping a chunk at a time.
+        with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker, initargs=init_args) as ex:
+            futures = [ex.submit(event_spreads, idx) for idx in range(n)]
+            for fut in tqdm(as_completed(futures), total=n, desc="events"):
+                accumulate(fut.result())
+    else:
+        for idx in tqdm(range(n), total=n, desc="events"):
+            accumulate(event_spreads(idx))
 
     rows = {}
     n_particles = 0
