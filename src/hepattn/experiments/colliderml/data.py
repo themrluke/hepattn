@@ -60,8 +60,8 @@ class ColliderMLDataset(Dataset):
         self,
         dirpath: str,
         num_events: int = -1,
-        particle_min_pt: float = 0.5,
-        particle_max_abs_eta: float = 4.0,
+        particle_min_pt: float | None = 0.5,
+        particle_max_abs_eta: float | None = 4.0,
         particle_hit_cuts: dict[str, dict[str, int]] | None = None,
         particle_include_charged: bool = True,
         particle_include_neutral: bool = True,
@@ -71,10 +71,26 @@ class ColliderMLDataset(Dataset):
         build_calohit_associations: bool = True,
         sihit_volume_ids: list[int] | None = None,
         sihit_max_abs_eta: float | None = None,
-        max_num_particles: int = 1024,
+        max_num_particles: int | None = 1024,
+        hit_filter: bool = False,
+        build_dense_masks: bool = True,
         debug: bool = False,
     ):
         super().__init__()
+
+        # Hit-filter mode: the model is per-hit only (no object queries), so it
+        # needs just the `sihit_on_valid_particle` label. We therefore skip the
+        # dense (num_particles, num_sihits) association matrix and the padding of
+        # particle targets to max_num_particles, both of which are pure overhead
+        # here. Tracking mode (default) keeps the full behaviour.
+        self.hit_filter = hit_filter
+
+        # In tracking mode, whether to materialise the dense
+        # (num_particles, num_sihits) `particle_sihit_valid` mask. Consumers that
+        # only need the CSR association (e.g. geometry/ordering studies) can set
+        # this False to skip a matrix that is O(num_particles * num_sihits) and
+        # would otherwise dominate memory when cuts are relaxed.
+        self.build_dense_masks = build_dense_masks
 
         self.dirpath = Path(dirpath)
         dataset_prefix = f"{event_type}_pu200"
@@ -536,8 +552,12 @@ class ColliderMLDataset(Dataset):
             targets[f"particle_{class_name}"] = class_mask
 
     def _build_particle_kinematic_mask(self, targets: dict[str, torch.Tensor]) -> torch.Tensor:
-        particle_valid = targets["particle_pt"] >= self.particle_min_pt
-        particle_valid = particle_valid & (torch.abs(targets["particle_eta"]) <= self.particle_max_abs_eta)
+        # None for a cut means "no cut" (leave that dimension unrestricted).
+        particle_valid = torch.ones_like(targets["particle_pt"], dtype=torch.bool)
+        if self.particle_min_pt is not None:
+            particle_valid = particle_valid & (targets["particle_pt"] >= self.particle_min_pt)
+        if self.particle_max_abs_eta is not None:
+            particle_valid = particle_valid & (torch.abs(targets["particle_eta"]) <= self.particle_max_abs_eta)
 
         if not self.particle_include_neutral:
             particle_valid = particle_valid & (~targets["particle_neutral"])
@@ -794,6 +814,9 @@ class ColliderMLDataset(Dataset):
 
     def _pad_particle_targets_inplace(self, targets: dict[str, torch.Tensor]) -> None:
         n = self.max_num_particles
+        if n is None:
+            return  # no fixed query count to pad to
+
         for key, values in targets.items():
             if not key.startswith("particle_"):
                 continue
@@ -864,8 +887,9 @@ class ColliderMLDataset(Dataset):
         )
 
         # Truncate to max_num_particles if needed, keeping highest-pT particles
+        # (None disables truncation, keeping every particle).
         num_particles = int(targets["particle_particle_id"].size(0))
-        if num_particles > self.max_num_particles:
+        if self.max_num_particles is not None and num_particles > self.max_num_particles:
             self._debug(f"truncating {num_particles} particles to max_num_particles={self.max_num_particles}")
             pt_order = torch.argsort(targets["particle_pt"], descending=True)
             truncate_mask = torch.zeros(num_particles, dtype=torch.bool)
@@ -904,17 +928,29 @@ class ColliderMLDataset(Dataset):
         targets["particle_sihit_shape"] = particle_sihit_shape
         targets["particle_num_sihits"] = particle_num_sihits
 
-        num_particles = int(particle_sihit_shape[0].item())
         num_sihits = int(particle_sihit_shape[1].item())
-        particle_sihit_valid = torch.zeros(num_particles, num_sihits, dtype=torch.bool)
+
+        # Per-hit label: a sihit is valid if it belongs to any reconstructable
+        # particle, i.e. its column index appears in the CSR indices. O(nnz) and
+        # needs no dense matrix, so compute it directly in every mode.
+        sihit_on_valid_particle = torch.zeros(num_sihits, dtype=torch.bool)
         if particle_sihit_indices.numel() > 0:
-            row_ids = torch.repeat_interleave(
-                torch.arange(num_particles),
-                torch.diff(particle_sihit_indptr).to(torch.int64),
-            )
-            particle_sihit_valid[row_ids, particle_sihit_indices] = True
-        targets["particle_sihit_valid"] = particle_sihit_valid
-        targets["sihit_on_valid_particle"] = particle_sihit_valid.any(dim=0)
+            sihit_on_valid_particle[particle_sihit_indices] = True
+        targets["sihit_on_valid_particle"] = sihit_on_valid_particle
+
+        # Tracking mode additionally needs the dense (num_particles, num_sihits)
+        # association mask for the object queries. The hit filter never uses it,
+        # and callers that only read the CSR can skip it via build_dense_masks.
+        if not self.hit_filter and self.build_dense_masks:
+            num_particles = int(particle_sihit_shape[0].item())
+            particle_sihit_valid = torch.zeros(num_particles, num_sihits, dtype=torch.bool)
+            if particle_sihit_indices.numel() > 0:
+                row_ids = torch.repeat_interleave(
+                    torch.arange(num_particles),
+                    torch.diff(particle_sihit_indptr).to(torch.int64),
+                )
+                particle_sihit_valid[row_ids, particle_sihit_indices] = True
+            targets["particle_sihit_valid"] = particle_sihit_valid
 
         # Return the calorimeter hit info if requested
         if self.return_calohits:
@@ -943,7 +979,11 @@ class ColliderMLDataset(Dataset):
         sample_id = self.sample_ids[idx]
         inputs, targets = self.load_event(sample_id)
 
-        self._pad_particle_targets_inplace(targets)
+        # Padding particle targets to max_num_particles is only needed for the
+        # tracking task (target objects must match the fixed query count). The
+        # hit filter never reads particle targets, so skip it entirely.
+        if not self.hit_filter:
+            self._pad_particle_targets_inplace(targets)
 
         # Add dummy batch dimension
         # TODO: Support batch size > 1
