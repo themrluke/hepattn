@@ -10,7 +10,7 @@ Available orderings (see ``SORTERS``):
     - ``phi``             : sort by azimuthal angle only (the model's current
                             ``input_sort_field: phi``).
     - ``hilbert``         : Hilbert space-filling curve over (eta, phi).
-    - ``lsh``             : random-projection strip LSH over (eta, phi).
+    - ``lsh``             : HEPTv2 E2LSH serialization over (eta, phi) (one hash table).
 
 Only ``phi`` is periodic: sorting by the azimuthal angle maps the circle onto
 the (wrapped) 1D sequence, so phi = +/-pi is healed by the model's
@@ -86,8 +86,8 @@ def order_phi(eta: np.ndarray, phi: np.ndarray, rng: np.random.Generator) -> np.
     return np.argsort(phi, kind="stable")
 
 
-def order_hilbert(eta: np.ndarray, phi: np.ndarray, rng: np.random.Generator, *, bits: int = 16) -> np.ndarray:
-    """Order by a Hilbert curve over the (eta, phi) plane."""
+def order_hilbert(eta: np.ndarray, phi: np.ndarray, rng: np.random.Generator, *, bits: int = 10) -> np.ndarray:
+    """Order by a Hilbert curve over the (eta, phi) plane (2**bits grid per axis)."""
     side = 1 << bits
     x = _quantize(eta, bits)
     y = _quantize(phi, bits)
@@ -95,44 +95,57 @@ def order_hilbert(eta: np.ndarray, phi: np.ndarray, rng: np.random.Generator, *,
     return np.argsort(d, kind="stable")
 
 
-def order_lsh(
-    eta: np.ndarray,
-    phi: np.ndarray,
-    rng: np.random.Generator,
-    *,
-    n_bands: int | None = None,
-) -> np.ndarray:
-    """Random-projection strip LSH over (eta, phi).
+def _hept_region_counts(num_regions: int, rng: np.random.Generator, num_and_hashes: int = 2) -> np.ndarray:
+    """Per-axis region counts ``[eta_count, phi_count]`` (HEPTv2 ``get_regions``).
 
-    Standardise the coordinates, apply a random 2D rotation, cut the first
-    rotated axis into ``n_bands`` equal-width strips, then read the strips out in
-    a serpentine (boustrophedon) order along the second axis. Nearby points fall
-    in the same or adjacent strips with high probability, so the resulting index
-    preserves 2D locality. Randomised via ``rng``; ``n_bands`` defaults to
-    ``round(sqrt(N))`` which balances locality along the two axes.
+    Their product is approximately ``num_regions`` (rounded to multiples of 1/3),
+    giving the number of equal-occupancy quantile bins along eta and phi.
     """
-    num = eta.shape[0]
-    if num == 0:
+    lb = 2.0
+    ub = 2 * num_regions ** (1 / num_and_hashes) - lb
+    r = rng.random(num_and_hashes) * (ub - lb) + lb
+    r = (num_regions / r.prod()) ** (1 / num_and_hashes) * r
+    return np.round(r * 3) / 3
+
+
+def _quantile_region(v: np.ndarray, count: float) -> np.ndarray:
+    """Equal-occupancy quantile-bin index (1-based) of each element."""
+    n = v.shape[0]
+    rank = np.argsort(np.argsort(v, kind="stable"), kind="stable").astype(np.float64)
+    region_size = np.ceil(n / count)
+    return rank // region_size + 1
+
+
+def order_lsh(eta: np.ndarray, phi: np.ndarray, rng: np.random.Generator, *, num_regions: int = 100) -> np.ndarray:
+    """HEPTv2 locality-sensitive-hashing serialization over (eta, phi).
+
+    Reproduces one OR-table/head of HEPTv2's LSH serialization (arXiv:2606.20437):
+    a fixed random Gaussian projection ``alpha.(eta, phi)`` (E2LSH) plus
+    equal-occupancy quantile-bin indices in eta and phi, combined as
+
+        ``o = alpha.(eta, phi) + R_eta * D + R_phi * D * (ceil(eta_count) + 1)``
+
+    where ``D`` is the range of the projection. Sorting by ``o`` orders hits by
+    their 2D (eta, phi) quantile cell (phi-major, eta-minor) and, within a cell, by
+    the random projection, so hits nearby in (eta, phi) stay close in the sequence.
+
+    The projection and region counts are drawn from ``rng``; a single call is one
+    hash table. HEPTv2 uses several *independent* such orderings (multiple heads)
+    and unions them -- see the reachability table, which runs this at several seeds.
+    """
+    n = eta.shape[0]
+    if n == 0:
         return np.zeros(0, dtype=np.int64)
-    if n_bands is None:
-        n_bands = max(1, int(round(np.sqrt(num))))
 
-    e = (eta - eta.mean()) / (eta.std() + _EPS)
-    p = (phi - phi.mean()) / (phi.std() + _EPS)
+    counts = _hept_region_counts(num_regions, rng)  # [eta_count, phi_count]
+    alpha = rng.normal(0.0, 1.0, size=2)  # E2LSH random projection
+    hashed = eta * alpha[0] + phi * alpha[1]
+    hash_shift = max(float(hashed.max() - hashed.min()), _EPS)
 
-    theta = rng.uniform(0.0, np.pi)
-    cos_t, sin_t = np.cos(theta), np.sin(theta)
-    u = cos_t * e + sin_t * p  # primary axis -> strips
-    v = -sin_t * e + cos_t * p  # secondary axis -> within-strip order
-
-    # Assign each point to a strip via rank-based quantiles (balanced strips).
-    u_rank = np.argsort(np.argsort(u, kind="stable"), kind="stable")
-    band = np.minimum((u_rank * n_bands) // num, n_bands - 1)
-
-    # Serpentine: even strips ascending in v, odd strips descending.
-    direction = np.where(band % 2 == 0, 1.0, -1.0)
-    key = band.astype(np.float64) * (2.0 * num) + direction * v
-    return np.argsort(key, kind="stable")
+    region_eta = _quantile_region(eta, counts[0])
+    region_phi = _quantile_region(phi, counts[1])
+    o = hashed + region_eta * hash_shift + region_phi * hash_shift * (np.ceil(counts[0]) + 1)
+    return np.argsort(o, kind="stable")
 
 
 SORTERS: dict[str, Ordering] = {
