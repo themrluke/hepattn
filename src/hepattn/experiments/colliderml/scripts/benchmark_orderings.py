@@ -28,7 +28,7 @@ the sequence. There is no flag to turn this off.
 Example:
     python scripts/benchmark_orderings.py --num-events 100
     python scripts/benchmark_orderings.py --split val --num-events 200 \
-        --window-metric mutual --csv orderings.csv
+        --window-metric mutual --md orderings.md
 """
 
 from __future__ import annotations
@@ -71,26 +71,40 @@ SPLIT_TO_KEYS = {
 }
 
 
-# Cut-disabling overrides for --no-cuts: None disables each hit/particle
-# selection in the dataset (no pt/eta/volume cut, no truncation), and including
-# both charges plus empty hit_cuts keeps every particle the raw files provide.
+# Overrides applied under --no-cuts. None disables the geometric selections
+# (sihit volume/eta and particle |eta|) and truncation, while the particle
+# quality cuts (pt >= 0.9, charged only, >= 3 sihits) are kept. particle_hit_cuts
+# must be nested by particle class: {<class>: {<cut>: value}}.
 NO_CUTS_OVERRIDES = {
-    "particle_min_pt": None,
+    "particle_min_pt": 0.9,
     "particle_max_abs_eta": None,
-    "particle_hit_cuts": {},
+    "particle_hit_cuts": {
+        "charged_hadron": {"min_num_sihit": 3},
+        "electron": {"min_num_sihit": 3},
+        "muon": {"min_num_sihit": 3},
+        "tau": {"min_num_sihit": 3},
+    },
     "particle_include_charged": True,
-    "particle_include_neutral": True,
-    "sihit_volume_ids": None,
+    "particle_include_neutral": False,
+    "sihit_volume_ids": [16, 18],
     "sihit_max_abs_eta": None,
     "max_num_particles": None,
 }
 
 
-def build_dataset(config_path: Path, split: str, num_events: int | None, no_cuts: bool = False) -> ColliderMLDataset:
+def build_dataset(
+    config_path: Path,
+    split: str,
+    num_events: int | None,
+    no_cuts: bool = False,
+    sihit_volumes: list[int] | None = None,
+) -> ColliderMLDataset:
     """Instantiate the real tracking dataset straight from a training config.
 
     With ``no_cuts=True`` every hit- and particle-level selection from the config
     is disabled so the orderings are measured on the full raw dataset.
+    ``sihit_volumes`` overrides which detector volumes are kept (e.g. barrel-only
+    vs endcap-only); it takes precedence over both the config and ``no_cuts``.
     """
     with config_path.open() as f:
         config = yaml.safe_load(f)
@@ -116,10 +130,19 @@ def build_dataset(config_path: Path, split: str, num_events: int | None, no_cuts
     )
     if no_cuts:
         kwargs.update(NO_CUTS_OVERRIDES)
+    if sihit_volumes is not None:
+        kwargs["sihit_volume_ids"] = sihit_volumes
     return ColliderMLDataset(**kwargs)
 
 
-def particle_spreads(order: np.ndarray, indptr: np.ndarray, indices: np.ndarray, min_hits: int, num_hits: int) -> np.ndarray:
+def particle_spreads(
+    order: np.ndarray,
+    indptr: np.ndarray,
+    indices: np.ndarray,
+    min_hits: int,
+    num_hits: int,
+    keep_mask: np.ndarray | None = None,
+) -> np.ndarray:
     """Circular index spread of each particle's hits under a given ordering.
 
     ``rank[h]`` is the position of hit ``h`` in the sorted sequence. The sequence
@@ -127,13 +150,16 @@ def particle_spreads(order: np.ndarray, indptr: np.ndarray, indices: np.ndarray,
     particle's spread is the shortest arc covering all of its hits: the ring
     length minus the largest gap between its consecutive hits, where the seam gap
     (across the phi = +/-pi wrap) is included as one of the candidate gaps.
-    Fully vectorised over particles.
+    ``keep_mask`` optionally restricts which particles are reported (e.g. a truth
+    eta window). Fully vectorised over particles.
     """
     rank = np.empty(num_hits, dtype=np.int64)
     rank[order] = np.arange(num_hits, dtype=np.int64)
 
     counts = np.diff(indptr)
     keep = counts >= min_hits
+    if keep_mask is not None:
+        keep = keep & keep_mask
     if not keep.any():
         return np.zeros(0, dtype=np.int64)
 
@@ -186,6 +212,29 @@ def summarise(spreads: np.ndarray, windows: list[int], metric: str) -> dict[str,
     return row
 
 
+def to_markdown(table: pd.DataFrame, fmt: dict, header_lines: list[str]) -> str:
+    """Render the results table as a Markdown document for pasting into notes.
+
+    Containment (c@*) columns are shown as percentages to 1 dp (rather than
+    fractions), the spread columns keep the console formatting, and the first
+    column (sorter name) is bolded.
+    """
+    cols = list(table.columns)
+
+    def render(col: str, val: float) -> str:
+        if col.startswith("c@"):
+            return f"{val * 100:.1f}%"
+        return fmt[col](val) if col in fmt else str(val)
+
+    head = "| sorter | " + " | ".join(cols) + " |"
+    align = "|:---|" + "|".join(["---:"] * len(cols)) + "|"
+    body = []
+    for idx, row in table.iterrows():
+        cells = [render(c, row[c]) for c in cols]
+        body.append(f"| **{idx}** | " + " | ".join(cells) + " |")
+    return "\n".join([*header_lines, "", head, align, *body, ""])
+
+
 def available_cpus() -> int:
     """CPUs actually available to this process (respects cgroup/SLURM affinity)."""
     try:
@@ -199,7 +248,7 @@ def available_cpus() -> int:
 _WORKER: dict = {}
 
 
-def _init_worker(config_path: Path, split: str, num_events: int | None, sorter_names: list[str], min_hits: int, seed: int, no_cuts: bool) -> None:
+def _init_worker(run_cfg: dict) -> None:
     # Belt-and-braces: also cap the runtime-configurable thread pools per process.
     import torch
 
@@ -213,10 +262,18 @@ def _init_worker(config_path: Path, split: str, num_events: int | None, sorter_n
         pass
 
     _WORKER.update(
-        dataset=build_dataset(config_path, split, num_events, no_cuts=no_cuts),
-        sorters=sorter_names,
-        min_hits=min_hits,
-        seed=seed,
+        dataset=build_dataset(
+            run_cfg["config"],
+            run_cfg["split"],
+            run_cfg["num_events"],
+            no_cuts=run_cfg["no_cuts"],
+            sihit_volumes=run_cfg["sihit_volumes"],
+        ),
+        sorters=run_cfg["sorters"],
+        min_hits=run_cfg["min_hits"],
+        seed=run_cfg["seed"],
+        eta_min=run_cfg["particle_eta_min"],
+        eta_max=run_cfg["particle_eta_max"],
     )
 
 
@@ -225,7 +282,9 @@ def event_spreads(idx: int) -> dict[str, np.ndarray]:
 
     Reads per-process state set by ``_init_worker``. The RNG is seeded per event
     as (seed, sample_id) so the random/lsh orderings are reproducible and
-    independent of worker count or event ordering.
+    independent of worker count or event ordering. An optional truth-eta window
+    (on the particle's true |eta| = arctanh(pz/p)) restricts which particles are
+    reported, without changing the hit sequence or the ordering.
     """
     dataset = _WORKER["dataset"]
     sample_id = dataset.sample_ids[idx]
@@ -240,11 +299,22 @@ def event_spreads(idx: int) -> dict[str, np.ndarray]:
     if num_hits == 0 or indices.size == 0:
         return {name: empty for name in _WORKER["sorters"]}
 
+    # Truth-eta particle selection (population filter; leaves hits/ordering intact).
+    keep_mask = None
+    eta_min, eta_max = _WORKER["eta_min"], _WORKER["eta_max"]
+    if eta_min is not None or eta_max is not None:
+        abs_true_eta = np.abs(targets["particle_eta"].numpy())
+        keep_mask = np.ones(abs_true_eta.shape[0], dtype=bool)
+        if eta_min is not None:
+            keep_mask &= abs_true_eta >= eta_min
+        if eta_max is not None:
+            keep_mask &= abs_true_eta <= eta_max
+
     rng = np.random.default_rng([_WORKER["seed"], int(sample_id)])
     out = {}
     for name in _WORKER["sorters"]:
         order = SORTERS[name](eta, phi, rng)
-        out[name] = particle_spreads(order, indptr, indices, _WORKER["min_hits"], num_hits)
+        out[name] = particle_spreads(order, indptr, indices, _WORKER["min_hits"], num_hits, keep_mask)
     return out
 
 
@@ -262,19 +332,39 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Disable all config hit/particle selection cuts and benchmark on the full raw dataset (--min-hits still applies).",
     )
+    p.add_argument(
+        "--sihit-volumes",
+        nargs="+",
+        type=int,
+        default=None,
+        help="Restrict hits to these detector volume IDs (barrel: 17 24 29; endcap: 16 18 23 25 28 30). Overrides config/--no-cuts.",
+    )
+    p.add_argument("--particle-eta-min", type=float, default=None, help="Keep only particles with truth |eta| >= this (population filter).")
+    p.add_argument("--particle-eta-max", type=float, default=None, help="Keep only particles with truth |eta| <= this (population filter).")
     p.add_argument("--seed", type=int, default=0, help="Seed for the random and lsh orderings.")
     p.add_argument("--workers", type=int, default=1, help="Parallel worker processes across events (default 1 = serial; -1 = all available CPUs).")
-    p.add_argument("--csv", type=Path, default=None, help="Optional path to also write the table as CSV.")
+    p.add_argument("--md", type=Path, default=None, help="Optional path to write the table as a Markdown file (for pasting into notes).")
     return p.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     num_events = None if args.num_events == -1 else args.num_events
-    init_args = (args.config, args.split, num_events, args.sorters, args.min_hits, args.seed, args.no_cuts)
+    run_cfg = {
+        "config": args.config,
+        "split": args.split,
+        "num_events": num_events,
+        "sorters": args.sorters,
+        "min_hits": args.min_hits,
+        "seed": args.seed,
+        "no_cuts": args.no_cuts,
+        "sihit_volumes": args.sihit_volumes,
+        "particle_eta_min": args.particle_eta_min,
+        "particle_eta_max": args.particle_eta_max,
+    }
 
     # Build once up front (also gives us the event count n).
-    _init_worker(*init_args)
+    _init_worker(run_cfg)
     n = len(_WORKER["dataset"])
 
     workers = available_cpus() if args.workers == -1 else max(1, args.workers)
@@ -291,7 +381,7 @@ def main() -> None:
         print(f"Using {workers} worker processes (building per-worker datasets first)...", flush=True)
         # submit + as_completed gives smooth per-event progress (results pooled,
         # so completion order doesn't matter) rather than jumping a chunk at a time.
-        with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker, initargs=init_args) as ex:
+        with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker, initargs=(run_cfg,)) as ex:
             futures = [ex.submit(event_spreads, idx) for idx in range(n)]
             for fut in tqdm(as_completed(futures), total=n, desc="events"):
                 accumulate(fut.result())
@@ -316,15 +406,34 @@ def main() -> None:
     fmt = {c: "{:.1f}".format for c in spread_cols}
     fmt.update({f"c@{w}": "{:.3f}".format for w in args.windows})
 
+    cuts_state = "geometry-off (quality cuts kept)" if args.no_cuts else "ON (from config)"
+    volumes = _WORKER["dataset"].sihit_volume_ids
+    vol_desc = "all" if volumes is None else str(volumes)
+    if args.particle_eta_min is not None or args.particle_eta_max is not None:
+        lo = args.particle_eta_min if args.particle_eta_min is not None else 0.0
+        hi = args.particle_eta_max if args.particle_eta_max is not None else float("inf")
+        eta_desc = f"[{lo:g}, {hi:g}]"
+    else:
+        eta_desc = "all"
+
     print()
-    cuts_state = "OFF (full raw dataset)" if args.no_cuts else "ON (from config)"
     print(f"ColliderML hit-ordering benchmark  |  split={args.split}  events={n}  particles={n_particles:,}")
     print(f"spread = circular hit-position span  |  containment metric='{args.window_metric}'  min_hits={args.min_hits}  cuts={cuts_state}")
+    print(f"hit volumes={vol_desc}  |  particle truth|eta|={eta_desc}")
     print(table.to_string(formatters=fmt))
 
-    if args.csv is not None:
-        table.to_csv(args.csv)
-        print(f"\nWrote {args.csv}")
+    if args.md is not None:
+        header_lines = [
+            "# ColliderML hit-ordering benchmark",
+            "",
+            f"- **split:** {args.split}  |  **events:** {n}  |  **particles:** {n_particles:,}",
+            f"- **spread:** circular hit-position span  |  **containment metric:** `{args.window_metric}`"
+            f"  |  **min_hits:** {args.min_hits}  |  **cuts:** {cuts_state}",
+            f"- **hit volumes:** {vol_desc}  |  **particle truth \\|eta\\|:** {eta_desc}",
+            "- `c@W` = percentage of particles whose hits fit within an attention window of size W",
+        ]
+        args.md.write_text(to_markdown(table, fmt, header_lines))
+        print(f"\nWrote {args.md}")
 
 
 if __name__ == "__main__":
