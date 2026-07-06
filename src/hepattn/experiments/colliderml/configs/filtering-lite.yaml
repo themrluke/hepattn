@@ -2,9 +2,11 @@ seed_everything: 42
 name: ColliderML_HitFiltering_Lite
 
 data:
-  train_dir: /share/rcif2/maxhart/data/colliderml/v1/pu200/
-  val_dir: /share/rcif2/maxhart/data/colliderml/v1/pu200/
-  test_dir: /share/rcif2/maxhart/data/colliderml/v1/pu200/
+  # 80/20 shard-level split via symlinks into directories that mirror the
+  # source collection layout (ttbar_pu200_<collection>/). test reuses val for now.
+  train_dir: /share/rcif2/ljohnson/data/colliderml/v1/pu200/train/
+  val_dir: /share/rcif2/ljohnson/data/colliderml/v1/pu200/val/
+  test_dir: /share/rcif2/ljohnson/data/colliderml/v1/pu200/val/
 
   num_workers: 10
   num_train: -1
@@ -47,9 +49,13 @@ data:
   # mislabel their hits as noise. No num_queries coupling for hit filtering.
   max_num_particles: 6000
 
+  # Hit-filter mode: skip the dense particle->sihit matrix and particle-target
+  # padding (both unused by the per-hit filter) to cut CPU/dataloader overhead.
+  hit_filter: true
+
 trainer:
   # Training stuff here
-  max_epochs: 20
+  max_epochs: 80
   accelerator: gpu
   devices: 1
   precision: bf16-mixed
@@ -103,7 +109,6 @@ model:
             - class_path: hepattn.models.InputNet
               init_args:
                 input_name: sihit
-                input_dtype: float32
                 fields:
                   - x
                   - y
@@ -117,17 +122,9 @@ model:
                   class_path: hepattn.models.Dense
                   init_args:
                     input_size: 8
+                    hidden_layers: [128]
                     output_size: &dim 256
-                posenc:
-                  class_path: hepattn.models.FourierPositionEncoder
-                  init_args:
-                    input_name: sihit
-                    fields:
-                      - r
-                      - eta
-                      - phi
-                    dim: *dim
-                    scale: 0.1
+                    activation: SwiGLU
       encoder:
         class_path: hepattn.models.Encoder
         init_args:
@@ -137,7 +134,9 @@ model:
           window_size: 1024
           window_wrap: true
           hybrid_norm: true
-          norm: RMSNorm
+          norm: FastLayerNorm
+          dense_kwargs: {activation: SwiGLU}
+          attn_kwargs: {bias: false}
 
       tasks:
         class_path: torch.nn.ModuleList
