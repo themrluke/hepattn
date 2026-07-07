@@ -1,6 +1,11 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from torch import Tensor, nn
 
-from hepattn.utils.sorter import LearnedSorter
+if TYPE_CHECKING:
+    from hepattn.utils.sorter import LearnedSorter
 
 
 class SorterModel(nn.Module):
