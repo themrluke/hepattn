@@ -87,7 +87,7 @@ CUSTOM_CUTS = {
     },
     "particle_include_charged": True,
     "particle_include_neutral": False,
-    "sihit_volume_ids": [16, 18],
+    "sihit_volume_ids": [16, 17, 18],
     "sihit_max_abs_eta": None,
     "max_num_particles": None,
 }
@@ -426,7 +426,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--sorters", nargs="+", default=list(SORTERS), choices=list(SORTERS), help="Subset of orderings to benchmark.")
     p.add_argument("--windows", nargs="+", type=int, default=[128, 256, 512, 1024], help="Attention window sizes for containment.")
     p.add_argument("--window-metric", choices=["span", "block", "mutual"], default="span", help="Containment definition (see module docstring).")
-    p.add_argument("--min-hits", type=int, default=2, help="Ignore particles with fewer surviving sihits than this.")
+    p.add_argument("--min-hits", type=int, default=3, help="Ignore particles with fewer surviving sihits than this.")
     p.add_argument(
         "--custom-cuts",
         action="store_true",

@@ -8,6 +8,7 @@ from hepattn.models.input import InputNet
 from hepattn.models.maskformer import MaskFormer
 from hepattn.models.norm import CustomRMSNorm, FastLayerNorm
 from hepattn.models.posenc import FourierPositionEncoder, PositionEncoder
+from hepattn.models.sorter_model import SorterModel
 
 __all__ = [
     "Attention",
@@ -26,5 +27,6 @@ __all__ = [
     "MaskFormerDecoderLayer",
     "PositionEncoder",
     "Residual",
+    "SorterModel",
     "SwiGLU",
 ]

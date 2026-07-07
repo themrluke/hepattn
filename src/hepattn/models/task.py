@@ -1635,3 +1635,181 @@ class IncidenceBasedRegressionTask(RegressionTask):
         proxy_feats = proxy_feats_charged + proxy_feats_neutral
 
         return proxy_feats, is_charged
+
+
+class SupervisedOrderingTask(Task):
+    """Label-supervised ordering loss for a :class:`~hepattn.utils.sorter.LearnedSorter`.
+
+    Trains the per-hit sort score so that hits of the *same* truth particle land in one
+    attention window. This is the label-supervised variant of OPTNet's self-supervised
+    ordering loss (arXiv:2605.17197): where OPTNet pulls together *spatial* k-NN
+    neighbours (assuming spatial locality implies object locality), this uses the truth
+    hit->particle assignment directly -- better motivated in a dense detector where
+    spatially adjacent hits routinely belong to different (overlapping) tracks.
+
+    Two terms (paper Eqs. 2-3, attraction swapped for a truth-object term):
+
+    * **objectness** - mean over particles of the within-particle score variance,
+      pulling each particle's hits to one score band. Wrap-aware by default
+      (``circular=True``): the score is read as an angle ``2*pi*s`` and the per-object
+      *circular* variance ``1 - R`` is minimised, so a particle whose hits straddle the
+      ``0/1`` seam is not penalised (matching the encoder's ``window_wrap``).
+    * **distribution** (Eq. 3) - MSE of the sorted scores to the uniform ramp
+      ``t_i = i/N``, forcing the scores to span ``[0, 1]`` uniformly and preventing the
+      trivial ``s = const`` collapse.
+
+    ColliderML adaptation: hits are grouped by the raw ``object_index_field``
+    (``sihit_particle_id``) but only those flagged by ``include_field``
+    (``sihit_on_valid_particle``) enter the objectness term, so noise and
+    non-reconstructable hits are excluded without a noise-id sentinel. All non-padding
+    hits (``valid_field``) enter the distribution term.
+
+    Args:
+        name: Task name.
+        input_object: Constituent whose ordering is supervised (e.g. ``"sihit"``).
+        score_field: Suffix of the score stashed by the learned sorter
+            (``{input_object}_{score_field}``).
+        object_index_field: Per-hit truth object id key (full key, e.g. ``sihit_particle_id``).
+        include_field: Per-hit bool key selecting hits on reconstructable objects.
+        valid_field: Per-hit padding-validity key (in ``targets``).
+        losses: Weights per term; defaults to ``{"objectness": 1.0, "distribution": 1.0}``.
+        circular: Use wrap-aware circular variance for the objectness term.
+        window: Window size for the monitoring containment metric.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        input_object: str = "sihit",
+        score_field: str = "sort_score",
+        object_index_field: str = "sihit_particle_id",
+        include_field: str = "sihit_on_valid_particle",
+        valid_field: str = "sihit_valid",
+        losses: dict[str, float] | None = None,
+        circular: bool = True,
+        window: int = 512,
+    ):
+        super().__init__(has_intermediate_loss=False, permute_loss=False)
+        self.name = name
+        self.input_object = input_object
+        self.score_field = score_field
+        self.object_index_field = object_index_field
+        self.include_field = include_field
+        self.valid_field = valid_field
+        self.losses = losses if losses is not None else {"objectness": 1.0, "distribution": 1.0}
+        self.circular = circular
+        self.window = window
+
+    def forward(self, x: dict[str, Tensor], outputs: dict[str, dict[str, Tensor]] | None = None) -> dict[str, Tensor]:
+        """Pass through the (original-order) score and truth object id for the loss/metrics."""
+        return {
+            f"{self.input_object}_{self.score_field}": x[f"{self.input_object}_{self.score_field}"],
+            self.object_index_field: x[self.object_index_field],
+        }
+
+    def predict(self, outputs: dict[str, Tensor], **kwargs) -> dict[str, Tensor]:
+        """Expose the learned score / order (ordering is auxiliary; no thresholded output)."""
+        score = outputs[f"{self.input_object}_{self.score_field}"]
+        return {
+            f"{self.input_object}_{self.score_field}": score,
+            f"{self.input_object}_order": torch.argsort(score, dim=-1),
+            # Pass the truth object id (an input field) through so metrics can read it.
+            self.object_index_field: outputs[self.object_index_field],
+        }
+
+    def _objectness_loss(self, score: Tensor, obj_idx: Tensor, include: Tensor) -> Tensor:
+        """Mean over objects of the within-object (linear or circular) score variance."""
+        total = score.new_zeros(())
+        count = 0
+        for b in range(score.shape[0]):
+            mask = include[b]
+            s = score[b][mask]
+            o = obj_idx[b][mask]
+            if s.numel() < 2:
+                continue
+            uniq, inv = torch.unique(o, return_inverse=True)
+            m = uniq.numel()
+            counts = score.new_zeros(m).index_add_(0, inv, torch.ones_like(s))
+            multi = counts >= 2
+            if not multi.any():
+                continue
+            if self.circular:
+                # Circular variance 1 - R per object (R = resultant length of angles 2*pi*s):
+                # R = 1 when all scores coincide anywhere on the ring (seam included), R -> 0 when spread.
+                ang = 2 * torch.pi * s
+                c = score.new_zeros(m).index_add_(0, inv, torch.cos(ang)) / counts
+                sn = score.new_zeros(m).index_add_(0, inv, torch.sin(ang)) / counts
+                var = 1.0 - torch.sqrt(c.pow(2) + sn.pow(2) + 1e-12)
+            else:
+                means = score.new_zeros(m).index_add_(0, inv, s) / counts
+                var = score.new_zeros(m).index_add_(0, inv, (s - means[inv]).pow(2)) / counts
+            total = total + var[multi].mean()
+            count += 1
+        return total / max(count, 1)
+
+    def _distribution_loss(self, score: Tensor, valid: Tensor) -> Tensor:
+        """Eq. 3: MSE between the per-event sorted scores and the uniform ramp ``t_i = i/N``."""
+        total = score.new_zeros(())
+        count = 0
+        for b in range(score.shape[0]):
+            s = score[b][valid[b]]
+            if s.numel() < 2:
+                continue
+            ramp = torch.arange(1, s.numel() + 1, device=s.device, dtype=s.dtype) / s.numel()
+            total = total + nn.functional.mse_loss(torch.sort(s)[0], ramp)
+            count += 1
+        return total / max(count, 1)
+
+    def loss(
+        self,
+        outputs: dict[str, Tensor],
+        targets: dict[str, Tensor],
+        layer_outputs: dict[str, dict[str, Tensor]] | None = None,
+    ) -> dict[str, Tensor]:
+        score = outputs[f"{self.input_object}_{self.score_field}"].float()
+        obj_idx = outputs[self.object_index_field]
+        valid = targets[self.valid_field].bool()
+        include = valid & targets[self.include_field].bool()
+
+        result: dict[str, Tensor] = {}
+        if self.losses.get("objectness", 0.0):
+            result["objectness"] = self.losses["objectness"] * self._objectness_loss(score, obj_idx, include)
+        if self.losses.get("distribution", 0.0):
+            result["distribution"] = self.losses["distribution"] * self._distribution_loss(score, valid)
+        return result
+
+    def metrics(self, preds: dict[str, Tensor], targets: dict[str, Tensor]) -> dict[str, Tensor]:
+        """Monitor how tightly each particle's hits sit in the learned order.
+
+        ``containment`` = fraction of reconstructable particles whose hits all fall
+        within one circular window of size ``self.window`` under ``argsort(score)``.
+        """
+        score = preds[f"{self.input_object}_{self.score_field}"].float()
+        obj_idx = preds[self.object_index_field]
+        valid = targets[self.valid_field].bool()
+        include = valid & targets[self.include_field].bool()
+
+        contained = 0
+        n_obj = 0
+        for b in range(score.shape[0]):
+            ring = int(valid[b].sum())
+            if ring == 0:
+                continue
+            # Rank of each (valid) hit in the learned order.
+            order = torch.argsort(score[b][valid[b]])
+            rank = torch.empty(ring, dtype=torch.long, device=score.device)
+            rank[order] = torch.arange(ring, device=score.device)
+            inc_b = include[b][valid[b]]
+            o_b = obj_idx[b][valid[b]]
+            for oid in torch.unique(o_b[inc_b]):
+                r = rank[(o_b == oid) & inc_b]
+                if r.numel() < 2:
+                    continue
+                r_sorted = torch.sort(r)[0]
+                gaps = torch.diff(r_sorted)
+                seam = ring - (int(r_sorted[-1]) - int(r_sorted[0]))
+                largest_gap = max(int(gaps.max()), seam)
+                spread = ring - largest_gap
+                contained += int(spread <= self.window)
+                n_obj += 1
+        return {"containment": torch.tensor(contained / max(n_obj, 1), device=score.device)}
