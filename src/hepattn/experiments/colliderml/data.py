@@ -9,7 +9,7 @@ import pyarrow.parquet as pq
 import scipy.sparse as sp
 import torch
 from lightning import LightningDataModule
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Sampler
 
 from hepattn.utils.tensor_utils import pad_to_size
 
@@ -56,6 +56,25 @@ class ColliderMLDataset(Dataset):
         "min_num_hcal": 0,
     }
 
+    # Raw parquet columns the dataset logic always needs, unioned with any user
+    # column projection so cuts/coordinate derivation/associations cannot break.
+    # (r/s/eta/phi/theta are derived from x/y/z, so only x/y/z are read.)
+    _SIHIT_REQUIRED_COLUMNS: ClassVar[tuple[str, ...]] = ("x", "y", "z", "particle_id", "volume_id", "detector")
+    _PARTICLE_REQUIRED_COLUMNS: ClassVar[tuple[str, ...]] = (
+        "particle_id", "pdg_id", "charge", "px", "py", "pz", "energy", "mass", "vx", "vy", "vz",
+    )
+
+    @classmethod
+    def _resolve_read_columns(cls, user_fields: list[str] | None, required: tuple[str, ...]) -> list[str] | None:
+        """Column set to read from parquet, or None to read every column.
+
+        ``user_fields`` (the model's input fields for this collection) is unioned
+        with the columns the dataset logic always consumes; None disables projection.
+        """
+        if user_fields is None:
+            return None
+        return list(dict.fromkeys([*user_fields, *required]))
+
     def __init__(
         self,
         dirpath: str,
@@ -74,6 +93,9 @@ class ColliderMLDataset(Dataset):
         max_num_particles: int | None = 1024,
         hit_filter: bool = False,
         build_dense_masks: bool = True,
+        row_group_cache_size: int = 8,
+        sihit_fields: list[str] | None = None,
+        particle_fields: list[str] | None = None,
         debug: bool = False,
     ):
         super().__init__()
@@ -126,8 +148,17 @@ class ColliderMLDataset(Dataset):
         # Cache parquet row-group metadata and a few decoded row-groups.
         # Must be initialised before counting events in shards.
         self._row_group_starts: dict[str, np.ndarray] = {}
-        self._row_group_cache: OrderedDict[tuple[str, int], ak.Array] = OrderedDict()
-        self._row_group_cache_size = 8
+        self._row_group_cache: OrderedDict[tuple, ak.Array] = OrderedDict()
+        self._row_group_cache_size = max(1, int(row_group_cache_size))
+
+        # Optional Parquet column projection: read only the raw columns the model +
+        # dataset logic need, instead of every column (the heavy tracker-hit
+        # collection stores unused true_x/y/z/time/surface_id, ~half the bytes).
+        # Opt-in: None reads all columns (unchanged behaviour for existing configs).
+        # The user list (model input fields) is unioned with the columns the dataset
+        # logic always needs, so cuts/associations cannot silently break.
+        self._sihit_read_columns = self._resolve_read_columns(sihit_fields, self._SIHIT_REQUIRED_COLUMNS)
+        self._particle_read_columns = self._resolve_read_columns(particle_fields, self._PARTICLE_REQUIRED_COLUMNS)
 
         # Build a dense sample index: each sample_id maps to (shard index, row/event index in shard).
         self.sample_index = []
@@ -267,13 +298,13 @@ class ColliderMLDataset(Dataset):
         row_in_group_idx = int(event_idx - row_group_starts[row_group_idx])
         return row_group_idx, row_in_group_idx
 
-    def _get_row_group_array(self, path: Path, row_group_idx: int) -> ak.Array:
-        key = (str(path), row_group_idx)
+    def _get_row_group_array(self, path: Path, row_group_idx: int, columns: list[str] | None = None) -> ak.Array:
+        key = (str(path), row_group_idx, tuple(columns) if columns is not None else None)
         if key in self._row_group_cache:
             self._row_group_cache.move_to_end(key)
             return self._row_group_cache[key]
 
-        row_group_array = ak.from_parquet(path, row_groups=[row_group_idx])
+        row_group_array = ak.from_parquet(path, row_groups=[row_group_idx], columns=columns)
         self._row_group_cache[key] = row_group_array
         self._row_group_cache.move_to_end(key)
 
@@ -282,9 +313,9 @@ class ColliderMLDataset(Dataset):
 
         return row_group_array
 
-    def _read_event_from_file(self, path: Path, event_idx: int) -> ak.Record:
+    def _read_event_from_file(self, path: Path, event_idx: int, columns: list[str] | None = None) -> ak.Record:
         row_group_idx, row_in_group_idx = self._get_row_group_lookup(path, event_idx)
-        row_group_array = self._get_row_group_array(path, row_group_idx)
+        row_group_array = self._get_row_group_array(path, row_group_idx, columns)
         return row_group_array[row_in_group_idx]
 
     def _debug(self, message: str) -> None:
@@ -841,8 +872,8 @@ class ColliderMLDataset(Dataset):
 
         # Read in the data
         t_read = perf_counter()
-        particles = self._read_event_from_file(particle_path, event_idx)
-        sihits = self._read_event_from_file(sihit_path, event_idx)
+        particles = self._read_event_from_file(particle_path, event_idx, self._particle_read_columns)
+        sihits = self._read_event_from_file(sihit_path, event_idx, self._sihit_read_columns)
         self._debug(f"read particles+sihits in {perf_counter() - t_read:.3f}s")
 
         targets = self._build_particle_targets(particles)
@@ -993,6 +1024,49 @@ class ColliderMLDataset(Dataset):
         return inputs_out, targets_out
 
 
+class ShardContiguousSampler(Sampler):
+    """Yield event indices grouped by their parquet shard to slash redundant decodes.
+
+    Each shard stores ~100 events in a single row-group, so reading one event decodes
+    the whole group. Under a global shuffle those decodes are ~all cache-misses (a
+    100-event decode per event used). This sampler keeps a shard's events contiguous
+    in the index stream, so a worker moving through them hits its row-group cache after
+    the first event -- each shard is decoded ~once per worker per epoch instead of ~100x.
+
+    Randomness is preserved for training by shuffling the shard order and the events
+    within each shard every epoch (fresh each ``__iter__``); with ``shuffle=False``
+    (validation/test) it yields a stable shard-contiguous order.
+    """
+
+    def __init__(self, dataset: ColliderMLDataset, shuffle: bool, seed: int = 0):
+        self.shuffle = shuffle
+        self.seed = seed
+        self.epoch = 0
+        # Group the in-use sample ids (0..num_events-1) by shard index, preserving order.
+        groups: dict[int, list[int]] = {}
+        for sid in range(int(dataset.num_events)):
+            groups.setdefault(dataset.sample_index[sid][0], []).append(sid)
+        self._shard_groups = list(groups.values())
+        self._num_events = int(dataset.num_events)
+
+    def __len__(self) -> int:
+        return self._num_events
+
+    def __iter__(self):
+        if not self.shuffle:
+            for group in self._shard_groups:
+                yield from group
+            return
+        g = torch.Generator()
+        g.manual_seed(self.seed + self.epoch)
+        self.epoch += 1
+        shard_order = torch.randperm(len(self._shard_groups), generator=g).tolist()
+        for s in shard_order:
+            group = self._shard_groups[s]
+            for i in torch.randperm(len(group), generator=g).tolist():
+                yield group[i]
+
+
 class ColliderMLDataModule(LightningDataModule):
     def __init__(
         self,
@@ -1004,6 +1078,7 @@ class ColliderMLDataModule(LightningDataModule):
         num_test: int,
         test_dir: str | None = None,
         pin_memory: bool = True,
+        prefetch_factor: int = 4,
         **kwargs,
     ):
         super().__init__()
@@ -1016,6 +1091,7 @@ class ColliderMLDataModule(LightningDataModule):
         self.num_val = num_val
         self.num_test = num_test
         self.pin_memory = pin_memory
+        self.prefetch_factor = prefetch_factor
         self.kwargs = kwargs
 
     def setup(self, stage: str):
@@ -1036,14 +1112,23 @@ class ColliderMLDataModule(LightningDataModule):
             print(f"Created test dataset with {len(self.test_dset):,} events")
 
     def get_dataloader(self, stage: str, dataset: ColliderMLDataset, shuffle: bool):
+        # Shard-contiguous sampling keeps each shard's events together so the row-group
+        # cache is reused (see ShardContiguousSampler); it replaces DataLoader shuffle.
+        sampler = ShardContiguousSampler(dataset, shuffle=shuffle)
+        # persistent_workers keeps worker processes (and their warm decode caches) alive
+        # across epochs and validation checks; prefetch_factor overlaps IO with compute.
+        extra = {}
+        if self.num_workers > 0:
+            extra["persistent_workers"] = True
+            extra["prefetch_factor"] = self.prefetch_factor
         return DataLoader(
             dataset=dataset,
             batch_size=None,
             collate_fn=None,
-            sampler=None,
+            sampler=sampler,
             num_workers=self.num_workers,
-            shuffle=shuffle,
             pin_memory=self.pin_memory,
+            **extra,
         )
 
     def train_dataloader(self):

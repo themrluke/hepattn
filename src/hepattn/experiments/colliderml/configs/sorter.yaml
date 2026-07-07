@@ -6,7 +6,7 @@ data:
   val_dir: /share/rcif2/ljohnson/data/colliderml/v1/pu200/val/
   test_dir: /share/rcif2/ljohnson/data/colliderml/v1/pu200/val/
 
-  num_workers: 10
+  num_workers: 8
   num_train: -1
   num_test: -1
   num_val: -1
@@ -37,18 +37,30 @@ data:
   sihit_volume_ids: [16, 17, 18]
   sihit_max_abs_eta: 4.0
 
-  max_num_particles: 6000
+  max_num_particles: null
 
   # Hit-filter mode: emits sihit_on_valid_particle + sihit_particle_id per hit and
   # skips the dense particle->sihit matrix / particle padding the sorter never uses.
   hit_filter: true
 
+  # Throughput: read only the raw tracker-hit columns we need (r/s/eta/phi are
+  # derived from x/y/z, so not listed); particle_id/volume_id/detector are added
+  # automatically. Drops unused true_x/y/z, time, surface_id (~half the bytes).
+  sihit_fields: [x, y, z, layer_id]
+  # Decoded-row-group cache per worker; with shard-contiguous sampling a small
+  # cache already keeps each shard decoded ~once. Raise for larger prefetch depth.
+  row_group_cache_size: 16
+  prefetch_factor: 6
+
 trainer:
-  max_epochs: 40
+  max_epochs: 1
   accelerator: gpu
   devices: 1
   precision: bf16-mixed
   log_every_n_steps: 50
+  # Validate every N training steps (not just once per epoch) so the containment
+  # metric (val/final_ordering_containment) is visible early. Lower for faster feedback.
+  val_check_interval: 100 # Must be lower than number of training batches per epoch
   default_root_dir: logs
   gradient_clip_val: 0.1
   enable_progress_bar: true
