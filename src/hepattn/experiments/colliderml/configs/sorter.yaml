@@ -47,20 +47,26 @@ data:
   # derived from x/y/z, so not listed); particle_id/volume_id/detector are added
   # automatically. Drops unused true_x/y/z, time, surface_id (~half the bytes).
   sihit_fields: [x, y, z, layer_id]
-  # Decoded-row-group cache per worker; with shard-contiguous sampling a small
-  # cache already keeps each shard decoded ~once. Raise for larger prefetch depth.
-  row_group_cache_size: 16
-  prefetch_factor: 6
+  # Project particles too (read [] -> only the required kinematic/label columns) to
+  # shrink the ~1.4 GB/particle-row-group decode.
+  particle_fields: []
+  # MEMORY: each event has ~250k hits, so one decoded row-group is ~0.6-1.4 GB.
+  # With shard-contiguous sampling a worker only needs the current shard resident
+  # (~2 entries), so keep this small: cache_size * num_workers * 2 (train+val
+  # persistent workers) * ~2GB is the RAM cost. 16 here caused ~250 GB; 4 is plenty.
+  row_group_cache_size: 4
+  prefetch_factor: 2
 
 trainer:
   max_epochs: 1
   accelerator: gpu
   devices: 1
   precision: bf16-mixed
-  log_every_n_steps: 50
-  # Validate every N training steps (not just once per epoch) so the containment
-  # metric (val/final_ordering_containment) is visible early. Lower for faster feedback.
-  val_check_interval: 100 # Must be lower than number of training batches per epoch
+  # ~1 full epoch is ~4,100 train steps (num_train: -1). Log ~40x/epoch and validate
+  # ~4x/epoch. (val is heavy: num_val=1000 events x ~250k hits each -- raise these, or
+  # lower num_val / set limit_val_batches, if validation dominates wall-time.)
+  log_every_n_steps: 100
+  val_check_interval: 1000 # training batches between validations; must be < batches/epoch
   default_root_dir: logs
   gradient_clip_val: 0.1
   enable_progress_bar: true
@@ -121,7 +127,7 @@ model:
                 include_field: sihit_on_valid_particle
                 valid_field: sihit_valid
                 circular: true
-                window: 512
+                windows: [128, 256, 512, 1024]
                 losses:
                   objectness: 1.0
                   distribution: 1.0

@@ -1674,7 +1674,8 @@ class SupervisedOrderingTask(Task):
         valid_field: Per-hit padding-validity key (in ``targets``).
         losses: Weights per term; defaults to ``{"objectness": 1.0, "distribution": 1.0}``.
         circular: Use wrap-aware circular variance for the objectness term.
-        window: Window size for the monitoring containment metric.
+        windows: Window sizes for the monitoring containment@W metrics
+            (default [128, 256, 512, 1024]).
     """
 
     def __init__(
@@ -1687,7 +1688,7 @@ class SupervisedOrderingTask(Task):
         valid_field: str = "sihit_valid",
         losses: dict[str, float] | None = None,
         circular: bool = True,
-        window: int = 512,
+        windows: list[int] | None = None,
     ):
         super().__init__(has_intermediate_loss=False, permute_loss=False)
         self.name = name
@@ -1698,7 +1699,7 @@ class SupervisedOrderingTask(Task):
         self.valid_field = valid_field
         self.losses = losses if losses is not None else {"objectness": 1.0, "distribution": 1.0}
         self.circular = circular
-        self.window = window
+        self.windows = windows if windows is not None else [128, 256, 512, 1024]
 
     def forward(self, x: dict[str, Tensor], outputs: dict[str, dict[str, Tensor]] | None = None) -> dict[str, Tensor]:
         """Pass through the (original-order) score and truth object id for the loss/metrics."""
@@ -1781,15 +1782,17 @@ class SupervisedOrderingTask(Task):
     def metrics(self, preds: dict[str, Tensor], targets: dict[str, Tensor]) -> dict[str, Tensor]:
         """Monitor how tightly each particle's hits sit in the learned order.
 
-        ``containment`` = fraction of reconstructable particles whose hits all fall
-        within one circular window of size ``self.window`` under ``argsort(score)``.
+        ``containment@W`` = fraction of reconstructable particles whose hits all fall
+        within one circular window of size ``W`` under ``argsort(score)``, reported for
+        every ``W`` in ``self.windows``. The per-particle circular spread is computed
+        once and thresholded against each window.
         """
         score = preds[f"{self.input_object}_{self.score_field}"].float()
         obj_idx = preds[self.object_index_field]
         valid = targets[self.valid_field].bool()
         include = valid & targets[self.include_field].bool()
 
-        contained = 0
+        contained = dict.fromkeys(self.windows, 0)
         n_obj = 0
         for b in range(score.shape[0]):
             ring = int(valid[b].sum())
@@ -1810,6 +1813,7 @@ class SupervisedOrderingTask(Task):
                 seam = ring - (int(r_sorted[-1]) - int(r_sorted[0]))
                 largest_gap = max(int(gaps.max()), seam)
                 spread = ring - largest_gap
-                contained += int(spread <= self.window)
+                for w in self.windows:
+                    contained[w] += int(spread <= w)
                 n_obj += 1
-        return {"containment": torch.tensor(contained / max(n_obj, 1), device=score.device)}
+        return {f"containment@{w}": torch.tensor(contained[w] / max(n_obj, 1), device=score.device) for w in self.windows}

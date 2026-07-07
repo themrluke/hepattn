@@ -61,7 +61,7 @@ class ColliderMLDataset(Dataset):
     # (r/s/eta/phi/theta are derived from x/y/z, so only x/y/z are read.)
     _SIHIT_REQUIRED_COLUMNS: ClassVar[tuple[str, ...]] = ("x", "y", "z", "particle_id", "volume_id", "detector")
     _PARTICLE_REQUIRED_COLUMNS: ClassVar[tuple[str, ...]] = (
-        "particle_id", "pdg_id", "charge", "px", "py", "pz", "energy", "mass", "vx", "vy", "vz",
+        "event_id", "particle_id", "pdg_id", "charge", "px", "py", "pz", "energy", "mass", "vx", "vy", "vz",
     )
 
     @classmethod
@@ -93,7 +93,7 @@ class ColliderMLDataset(Dataset):
         max_num_particles: int | None = 1024,
         hit_filter: bool = False,
         build_dense_masks: bool = True,
-        row_group_cache_size: int = 8,
+        row_group_cache_size: int = 4,
         sihit_fields: list[str] | None = None,
         particle_fields: list[str] | None = None,
         debug: bool = False,
@@ -1078,7 +1078,7 @@ class ColliderMLDataModule(LightningDataModule):
         num_test: int,
         test_dir: str | None = None,
         pin_memory: bool = True,
-        prefetch_factor: int = 4,
+        prefetch_factor: int = 3,
         **kwargs,
     ):
         super().__init__()
