@@ -1,0 +1,133 @@
+seed_everything: 42
+name: ColliderML_LearnedSorter
+
+data:
+  train_dir: /share/rcif2/ljohnson/data/colliderml/v1/pu200/train/
+  val_dir: /share/rcif2/ljohnson/data/colliderml/v1/pu200/val/
+  test_dir: /share/rcif2/ljohnson/data/colliderml/v1/pu200/val/
+
+  num_workers: 8
+  num_train: -1
+  num_test: -1
+  num_val: -1
+
+  event_type: ttbar
+
+  # Reconstructable-particle definition (matches the tracking/filtering cuts).
+  particle_min_pt: 0.9
+  particle_max_abs_eta: 4.0
+  particle_include_charged: true
+  particle_include_neutral: false
+
+  particle_hit_cuts:
+    charged_hadron:
+      min_num_sihit: 3
+    electron:
+      min_num_sihit: 3
+    muon:
+      min_num_sihit: 3
+    tau:
+      min_num_sihit: 3
+
+  return_calohits: false
+  return_tracks: false
+
+  # Full pixel (barrel + endcap) so the sorter learns the whole detector, matching
+  # the aspect-ratio / benchmark study.
+  sihit_volume_ids: [16, 17, 18]
+  sihit_max_abs_eta: 4.0
+
+  max_num_particles: null
+
+  # Hit-filter mode: emits sihit_on_valid_particle + sihit_particle_id per hit and
+  # skips the dense particle->sihit matrix / particle padding the sorter never uses.
+  hit_filter: true
+
+  # Throughput: read only the raw tracker-hit columns we need (r/s/eta/phi are
+  # derived from x/y/z, so not listed); particle_id/volume_id/detector are added
+  # automatically. Drops unused true_x/y/z, time, surface_id (~half the bytes).
+  sihit_fields: [x, y, z, layer_id]
+  # Project particles too (read [] -> only the required kinematic/label columns) to
+  # shrink the ~1.4 GB/particle-row-group decode.
+  particle_fields: []
+  # MEMORY: each event has ~250k hits, so one decoded row-group is ~0.6-1.4 GB.
+  # With shard-contiguous sampling a worker only needs the current shard resident
+  # (~2 entries), so keep this small: cache_size * num_workers * 2 (train+val
+  # persistent workers) * ~2GB is the RAM cost. 16 here caused ~250 GB; 4 is plenty.
+  row_group_cache_size: 4
+  prefetch_factor: 2
+
+trainer:
+  max_epochs: 1
+  accelerator: gpu
+  devices: 1
+  precision: bf16-mixed
+  # ~1 full epoch is ~4,100 train steps (num_train: -1). Log ~40x/epoch and validate
+  # ~4x/epoch. (val is heavy: num_val=1000 events x ~250k hits each -- raise these, or
+  # lower num_val / set limit_val_batches, if validation dominates wall-time.)
+  log_every_n_steps: 100
+  val_check_interval: 1000 # training batches between validations; must be < batches/epoch
+  default_root_dir: logs
+  gradient_clip_val: 0.1
+  enable_progress_bar: true
+
+  logger:
+    class_path: hepattn.utils.loggers.MyCometLogger
+    init_args:
+      project: colliderml_sorter
+
+  callbacks:
+    - class_path: hepattn.callbacks.InferenceTimer
+    - class_path: hepattn.callbacks.SaveConfig
+    - class_path: hepattn.callbacks.Checkpoint
+      init_args:
+        monitor: val/loss
+    - class_path: lightning.pytorch.callbacks.LearningRateMonitor
+    - class_path: lightning.pytorch.callbacks.TQDMProgressBar
+      init_args:
+        refresh_rate: 50
+
+model:
+  optimizer: Lion
+
+  lrs_config:
+    initial: 1e-5
+    max: 5e-4
+    end: 1e-6
+    pct_start: 0.05
+    weight_decay: 1e-5
+
+  model:
+    class_path: hepattn.models.SorterModel
+    init_args:
+      input_name: sihit
+      # Raw per-hit fields the ordering tasks read as truth labels.
+      passthrough_fields: [particle_id]
+
+      sorter:
+        class_path: hepattn.utils.sorter.LearnedSorter
+        init_args:
+          input_sort_field: phi          # warmup fallback (unused: no encoder, warmup_steps=0)
+          # Continuous coordinates (no phi seam) + r/eta for region-adaptive ordering.
+          score_fields: [x, y, z, r, eta]
+          hidden_dims: [64, 64]
+          warmup_steps: 0
+          score_field: sort_score
+
+      tasks:
+        class_path: torch.nn.ModuleList
+        init_args:
+          modules:
+            - class_path: hepattn.models.task.SupervisedOrderingTask
+              init_args:
+                name: ordering
+                input_object: sihit
+                score_field: sort_score
+                object_index_field: sihit_particle_id
+                include_field: sihit_on_valid_particle
+                valid_field: sihit_valid
+                circular: true
+                windows: [128, 256, 512, 1024]
+                losses:
+                  objectness: 1.0
+                  distribution: 1.0

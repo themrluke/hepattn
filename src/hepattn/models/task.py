@@ -1635,3 +1635,317 @@ class IncidenceBasedRegressionTask(RegressionTask):
         proxy_feats = proxy_feats_charged + proxy_feats_neutral
 
         return proxy_feats, is_charged
+
+
+class SupervisedOrderingTask(Task):
+    """Label-supervised ordering loss for a :class:`~hepattn.utils.sorter.LearnedSorter`.
+
+    Trains the per-hit sort score so that hits of the *same* truth particle land in one
+    attention window. This is the label-supervised variant of OPTNet's self-supervised
+    ordering loss (arXiv:2605.17197): where OPTNet pulls together *spatial* k-NN
+    neighbours (assuming spatial locality implies object locality), this uses the truth
+    hit->particle assignment directly -- better motivated in a dense detector where
+    spatially adjacent hits routinely belong to different (overlapping) tracks.
+
+    Two terms (paper Eqs. 2-3, attraction swapped for a truth-object term):
+
+    * **objectness** - mean over particles of the within-particle score variance,
+      pulling each particle's hits to one score band. Wrap-aware by default
+      (``circular=True``): the score is read as an angle ``2*pi*s`` and the per-object
+      *circular* variance ``1 - R`` is minimised, so a particle whose hits straddle the
+      ``0/1`` seam is not penalised (matching the encoder's ``window_wrap``).
+    * **distribution** (Eq. 3) - MSE of the sorted scores to the uniform ramp
+      ``t_i = i/N``, forcing the scores to span ``[0, 1]`` uniformly and preventing the
+      trivial ``s = const`` collapse.
+
+    ColliderML adaptation: hits are grouped by the raw ``object_index_field``
+    (``sihit_particle_id``) but only those flagged by ``include_field``
+    (``sihit_on_valid_particle``) enter the objectness term, so noise and
+    non-reconstructable hits are excluded without a noise-id sentinel. All non-padding
+    hits (``valid_field``) enter the distribution term.
+
+    Args:
+        name: Task name.
+        input_object: Constituent whose ordering is supervised (e.g. ``"sihit"``).
+        score_field: Suffix of the score stashed by the learned sorter
+            (``{input_object}_{score_field}``).
+        object_index_field: Per-hit truth object id key (full key, e.g. ``sihit_particle_id``).
+        include_field: Per-hit bool key selecting hits on reconstructable objects.
+        valid_field: Per-hit padding-validity key (in ``targets``).
+        losses: Weights per term; defaults to ``{"objectness": 1.0, "distribution": 1.0}``.
+        circular: Use wrap-aware circular variance for the objectness term.
+        windows: Window sizes for the monitoring containment@W metrics
+            (default [128, 256, 512, 1024]).
+    """
+
+    def __init__(
+        self,
+        name: str,
+        input_object: str = "sihit",
+        score_field: str = "sort_score",
+        object_index_field: str = "sihit_particle_id",
+        include_field: str = "sihit_on_valid_particle",
+        valid_field: str = "sihit_valid",
+        losses: dict[str, float] | None = None,
+        circular: bool = True,
+        windows: list[int] | None = None,
+    ):
+        super().__init__(has_intermediate_loss=False, permute_loss=False)
+        self.name = name
+        self.input_object = input_object
+        self.score_field = score_field
+        self.object_index_field = object_index_field
+        self.include_field = include_field
+        self.valid_field = valid_field
+        self.losses = losses if losses is not None else {"objectness": 1.0, "distribution": 1.0}
+        self.circular = circular
+        self.windows = windows if windows is not None else [128, 256, 512, 1024]
+
+    def forward(self, x: dict[str, Tensor], outputs: dict[str, dict[str, Tensor]] | None = None) -> dict[str, Tensor]:
+        """Pass through the (original-order) score and truth object id for the loss/metrics."""
+        return {
+            f"{self.input_object}_{self.score_field}": x[f"{self.input_object}_{self.score_field}"],
+            self.object_index_field: x[self.object_index_field],
+        }
+
+    def predict(self, outputs: dict[str, Tensor], **kwargs) -> dict[str, Tensor]:
+        """Expose the learned score / order (ordering is auxiliary; no thresholded output)."""
+        score = outputs[f"{self.input_object}_{self.score_field}"]
+        return {
+            f"{self.input_object}_{self.score_field}": score,
+            f"{self.input_object}_order": torch.argsort(score, dim=-1),
+            # Pass the truth object id (an input field) through so metrics can read it.
+            self.object_index_field: outputs[self.object_index_field],
+        }
+
+    def _objectness_loss(self, score: Tensor, obj_idx: Tensor, include: Tensor) -> Tensor:
+        """Mean over objects of the within-object (linear or circular) score variance."""
+        total = score.new_zeros(())
+        count = 0
+        for b in range(score.shape[0]):
+            mask = include[b]
+            s = score[b][mask]
+            o = obj_idx[b][mask]
+            if s.numel() < 2:
+                continue
+            uniq, inv = torch.unique(o, return_inverse=True)
+            m = uniq.numel()
+            counts = score.new_zeros(m).index_add_(0, inv, torch.ones_like(s))
+            multi = counts >= 2
+            if not multi.any():
+                continue
+            if self.circular:
+                # Circular variance 1 - R per object (R = resultant length of angles 2*pi*s):
+                # R = 1 when all scores coincide anywhere on the ring (seam included), R -> 0 when spread.
+                ang = 2 * torch.pi * s
+                c = score.new_zeros(m).index_add_(0, inv, torch.cos(ang)) / counts
+                sn = score.new_zeros(m).index_add_(0, inv, torch.sin(ang)) / counts
+                var = 1.0 - torch.sqrt(c.pow(2) + sn.pow(2) + 1e-12)
+            else:
+                means = score.new_zeros(m).index_add_(0, inv, s) / counts
+                var = score.new_zeros(m).index_add_(0, inv, (s - means[inv]).pow(2)) / counts
+            total = total + var[multi].mean()
+            count += 1
+        return total / max(count, 1)
+
+    def _distribution_loss(self, score: Tensor, valid: Tensor) -> Tensor:
+        """Eq. 3: MSE between the per-event sorted scores and the uniform ramp ``t_i = i/N``."""
+        total = score.new_zeros(())
+        count = 0
+        for b in range(score.shape[0]):
+            s = score[b][valid[b]]
+            if s.numel() < 2:
+                continue
+            ramp = torch.arange(1, s.numel() + 1, device=s.device, dtype=s.dtype) / s.numel()
+            total = total + nn.functional.mse_loss(torch.sort(s)[0], ramp)
+            count += 1
+        return total / max(count, 1)
+
+    def loss(
+        self,
+        outputs: dict[str, Tensor],
+        targets: dict[str, Tensor],
+        layer_outputs: dict[str, dict[str, Tensor]] | None = None,
+    ) -> dict[str, Tensor]:
+        score = outputs[f"{self.input_object}_{self.score_field}"].float()
+        obj_idx = outputs[self.object_index_field]
+        valid = targets[self.valid_field].bool()
+        include = valid & targets[self.include_field].bool()
+
+        result: dict[str, Tensor] = {}
+        if self.losses.get("objectness", 0.0):
+            result["objectness"] = self.losses["objectness"] * self._objectness_loss(score, obj_idx, include)
+        if self.losses.get("distribution", 0.0):
+            result["distribution"] = self.losses["distribution"] * self._distribution_loss(score, valid)
+        return result
+
+    def metrics(self, preds: dict[str, Tensor], targets: dict[str, Tensor]) -> dict[str, Tensor]:
+        """Monitor how tightly each particle's hits sit in the learned order.
+
+        ``containment@W`` = fraction of reconstructable particles whose hits all fall
+        within one circular window of size ``W`` under ``argsort(score)``, reported for
+        every ``W`` in ``self.windows``. The per-particle circular spread is computed
+        once and thresholded against each window.
+        """
+        score = preds[f"{self.input_object}_{self.score_field}"].float()
+        obj_idx = preds[self.object_index_field]
+        valid = targets[self.valid_field].bool()
+        include = valid & targets[self.include_field].bool()
+
+        contained = dict.fromkeys(self.windows, 0)
+        n_obj = 0
+        for b in range(score.shape[0]):
+            ring = int(valid[b].sum())
+            if ring == 0:
+                continue
+            # Rank of each (valid) hit in the learned order.
+            order = torch.argsort(score[b][valid[b]])
+            rank = torch.empty(ring, dtype=torch.long, device=score.device)
+            rank[order] = torch.arange(ring, device=score.device)
+            inc_b = include[b][valid[b]]
+            o_b = obj_idx[b][valid[b]]
+            for oid in torch.unique(o_b[inc_b]):
+                r = rank[(o_b == oid) & inc_b]
+                if r.numel() < 2:
+                    continue
+                r_sorted = torch.sort(r)[0]
+                gaps = torch.diff(r_sorted)
+                seam = ring - (int(r_sorted[-1]) - int(r_sorted[0]))
+                largest_gap = max(int(gaps.max()), seam)
+                spread = ring - largest_gap
+                for w in self.windows:
+                    contained[w] += int(spread <= w)
+                n_obj += 1
+        return {f"containment@{w}": torch.tensor(contained[w] / max(n_obj, 1), device=score.device) for w in self.windows}
+
+
+class NLSHOrderingTask(SupervisedOrderingTask):
+    """Window-aware NLSH ordering loss (Wang et al. 2024, arXiv:2401.18064), hinge form.
+
+    Trains the learned sort score as a 1-D locality-sensitive hash: hits of the *same*
+    particle should **collide** (sort values within a radius ``R``) and hits of a
+    *different* particle **separate** (beyond ``c*R``). Because the distribution term
+    keeps the sorted scores ~uniform, rank ``~= N * score``, so a score radius
+    ``R = target_window / N_valid`` corresponds to "land within one window of
+    ``target_window`` positions". This targets containment@W *directly*, unlike the
+    variance proxy in :class:`SupervisedOrderingTask`.
+
+    Terms (hinge-equivalent of the paper's ``max(R,|s_p-s_q|) - lambda*min(cR,|s_p-s_r|)``):
+
+    * **collision** - mean over same-particle pairs of ``max(0, d(s_p, s_q) - R)``.
+    * **separation** - mean over each anchor's ``num_negatives`` closest *different*-particle
+      hits of ``max(0, c*R - d(s_p, s_r))`` (hard negatives -- the ones at risk of
+      polluting the window).
+    * **distribution** - the uniform-ramp term (small weight) keeping ``R`` meaningful.
+
+    ``d`` is circular on the ``[0,1]`` ring when ``circular=True`` (matches ``window_wrap``).
+
+    **ColliderML adaptation (vs Max's TrackML version):** anchors and the collision term
+    use only reconstructable-particle hits (``include_field``), but hard negatives are
+    drawn from **all** valid hits (``separate_from_noise=True``) -- so in high-pileup
+    events the loss learns to push *noise* out of a particle's window, not just other
+    signal particles. Set ``separate_from_noise=False`` for the paper/TrackML behaviour.
+
+    Cost note: the separation term builds an ``(anchors x pool)`` distance matrix, so
+    with ~250k hits/event keep ``num_anchors`` modest (default 512).
+    """
+
+    def __init__(
+        self,
+        name: str,
+        input_object: str = "sihit",
+        score_field: str = "sort_score",
+        object_index_field: str = "sihit_particle_id",
+        include_field: str = "sihit_on_valid_particle",
+        valid_field: str = "sihit_valid",
+        losses: dict[str, float] | None = None,
+        circular: bool = True,
+        windows: list[int] | None = None,
+        target_window: int = 512,
+        c: float = 3.0,
+        num_anchors: int = 512,
+        num_negatives: int = 16,
+        separate_from_noise: bool = True,
+    ):
+        super().__init__(
+            name=name, input_object=input_object, score_field=score_field,
+            object_index_field=object_index_field, include_field=include_field,
+            valid_field=valid_field, circular=circular, windows=windows,
+            losses={"collision": 1.0, "separation": 1.0, "distribution": 0.1},
+        )
+        if losses is not None:
+            self.losses = losses
+        self.target_window = target_window
+        self.c = c
+        self.num_anchors = num_anchors
+        self.num_negatives = num_negatives
+        self.separate_from_noise = separate_from_noise
+
+    def _ring_distance(self, diff: Tensor) -> Tensor:
+        """Circular distance on the [0,1] score ring (or plain |Δs| if not circular)."""
+        return torch.minimum(diff, 1.0 - diff) if self.circular else diff
+
+    def _collision_separation(self, score: Tensor, obj_idx: Tensor, include: Tensor, valid: Tensor) -> tuple[Tensor, Tensor]:
+        coll = score.new_zeros(())
+        sep = score.new_zeros(())
+        count = 0
+        for b in range(score.shape[0]):
+            v = valid[b]
+            n_ring = int(v.sum())
+            if n_ring < 2:
+                continue
+            # Pool the negatives are drawn from: all valid hits (incl noise) by default.
+            pool_mask = v if self.separate_from_noise else (v & include[b])
+            s = score[b][pool_mask].float()
+            o = obj_idx[b][pool_mask]
+            sig = include[b][pool_mask]  # which pool entries are reconstructable (valid anchors)
+            n = s.numel()
+            anchor_ids = sig.nonzero(as_tuple=True)[0]
+            if n < 2 or anchor_ids.numel() < 1:
+                continue
+
+            r = self.target_window / n_ring
+            cr = self.c * r
+            a = min(self.num_anchors, anchor_ids.numel())
+            sel = anchor_ids[torch.randperm(anchor_ids.numel(), device=s.device)[:a]]
+
+            diff = self._ring_distance((s[sel].unsqueeze(1) - s.unsqueeze(0)).abs())  # (A, n)
+            same = o[sel].unsqueeze(1) == o.unsqueeze(0)
+
+            # collision: same-particle pairs, excluding each anchor vs itself
+            pos = same.clone()
+            pos[torch.arange(a, device=s.device), sel] = False
+            if pos.any():
+                coll = coll + torch.clamp(diff[pos] - r, min=0.0).mean()
+
+            # separation: the num_negatives closest different-particle hits per anchor
+            k = min(self.num_negatives, n)
+            hard = diff.masked_fill(same, float("inf")).topk(k, dim=1, largest=False).values
+            finite = torch.isfinite(hard)
+            if finite.any():
+                sep = sep + torch.clamp(cr - hard[finite], min=0.0).mean()
+            count += 1
+        count = max(count, 1)
+        return coll / count, sep / count
+
+    def loss(
+        self,
+        outputs: dict[str, Tensor],
+        targets: dict[str, Tensor],
+        layer_outputs: dict[str, dict[str, Tensor]] | None = None,
+    ) -> dict[str, Tensor]:
+        score = outputs[f"{self.input_object}_{self.score_field}"].float()
+        obj_idx = outputs[self.object_index_field]
+        valid = targets[self.valid_field].bool()
+        include = valid & targets[self.include_field].bool()
+
+        result: dict[str, Tensor] = {}
+        if self.losses.get("collision", 0.0) or self.losses.get("separation", 0.0):
+            coll, sep = self._collision_separation(score, obj_idx, include, valid)
+            if self.losses.get("collision", 0.0):
+                result["collision"] = self.losses["collision"] * coll
+            if self.losses.get("separation", 0.0):
+                result["separation"] = self.losses["separation"] * sep
+        if self.losses.get("distribution", 0.0):
+            result["distribution"] = self.losses["distribution"] * self._distribution_loss(score, valid)
+        return result

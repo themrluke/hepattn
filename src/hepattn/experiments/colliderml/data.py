@@ -9,7 +9,9 @@ import pyarrow.parquet as pq
 import scipy.sparse as sp
 import torch
 from lightning import LightningDataModule
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Sampler
+
+from hepattn.utils.tensor_utils import pad_to_size
 
 
 class ColliderMLDataset(Dataset):
@@ -54,12 +56,31 @@ class ColliderMLDataset(Dataset):
         "min_num_hcal": 0,
     }
 
+    # Raw parquet columns the dataset logic always needs, unioned with any user
+    # column projection so cuts/coordinate derivation/associations cannot break.
+    # (r/s/eta/phi/theta are derived from x/y/z, so only x/y/z are read.)
+    _SIHIT_REQUIRED_COLUMNS: ClassVar[tuple[str, ...]] = ("x", "y", "z", "particle_id", "volume_id", "detector")
+    _PARTICLE_REQUIRED_COLUMNS: ClassVar[tuple[str, ...]] = (
+        "event_id", "particle_id", "pdg_id", "charge", "px", "py", "pz", "energy", "mass", "vx", "vy", "vz",
+    )
+
+    @classmethod
+    def _resolve_read_columns(cls, user_fields: list[str] | None, required: tuple[str, ...]) -> list[str] | None:
+        """Column set to read from parquet, or None to read every column.
+
+        ``user_fields`` (the model's input fields for this collection) is unioned
+        with the columns the dataset logic always consumes; None disables projection.
+        """
+        if user_fields is None:
+            return None
+        return list(dict.fromkeys([*user_fields, *required]))
+
     def __init__(
         self,
         dirpath: str,
         num_events: int = -1,
-        particle_min_pt: float = 0.5,
-        particle_max_abs_eta: float = 4.0,
+        particle_min_pt: float | None = 0.5,
+        particle_max_abs_eta: float | None = 4.0,
         particle_hit_cuts: dict[str, dict[str, int]] | None = None,
         particle_include_charged: bool = True,
         particle_include_neutral: bool = True,
@@ -67,9 +88,31 @@ class ColliderMLDataset(Dataset):
         return_tracks: bool = True,
         event_type: str = "ttbar",
         build_calohit_associations: bool = True,
+        sihit_volume_ids: list[int] | None = None,
+        sihit_max_abs_eta: float | None = None,
+        max_num_particles: int | None = 1024,
+        hit_filter: bool = False,
+        build_dense_masks: bool = True,
+        row_group_cache_size: int = 4,
+        sihit_fields: list[str] | None = None,
+        particle_fields: list[str] | None = None,
         debug: bool = False,
     ):
         super().__init__()
+
+        # Hit-filter mode: the model is per-hit only (no object queries), so it
+        # needs just the `sihit_on_valid_particle` label. We therefore skip the
+        # dense (num_particles, num_sihits) association matrix and the padding of
+        # particle targets to max_num_particles, both of which are pure overhead
+        # here. Tracking mode (default) keeps the full behaviour.
+        self.hit_filter = hit_filter
+
+        # In tracking mode, whether to materialise the dense
+        # (num_particles, num_sihits) `particle_sihit_valid` mask. Consumers that
+        # only need the CSR association (e.g. geometry/ordering studies) can set
+        # this False to skip a matrix that is O(num_particles * num_sihits) and
+        # would otherwise dominate memory when cuts are relaxed.
+        self.build_dense_masks = build_dense_masks
 
         self.dirpath = Path(dirpath)
         dataset_prefix = f"{event_type}_pu200"
@@ -105,8 +148,17 @@ class ColliderMLDataset(Dataset):
         # Cache parquet row-group metadata and a few decoded row-groups.
         # Must be initialised before counting events in shards.
         self._row_group_starts: dict[str, np.ndarray] = {}
-        self._row_group_cache: OrderedDict[tuple[str, int], ak.Array] = OrderedDict()
-        self._row_group_cache_size = 8
+        self._row_group_cache: OrderedDict[tuple, ak.Array] = OrderedDict()
+        self._row_group_cache_size = max(1, int(row_group_cache_size))
+
+        # Optional Parquet column projection: read only the raw columns the model +
+        # dataset logic need, instead of every column (the heavy tracker-hit
+        # collection stores unused true_x/y/z/time/surface_id, ~half the bytes).
+        # Opt-in: None reads all columns (unchanged behaviour for existing configs).
+        # The user list (model input fields) is unioned with the columns the dataset
+        # logic always needs, so cuts/associations cannot silently break.
+        self._sihit_read_columns = self._resolve_read_columns(sihit_fields, self._SIHIT_REQUIRED_COLUMNS)
+        self._particle_read_columns = self._resolve_read_columns(particle_fields, self._PARTICLE_REQUIRED_COLUMNS)
 
         # Build a dense sample index: each sample_id maps to (shard index, row/event index in shard).
         self.sample_index = []
@@ -142,6 +194,12 @@ class ColliderMLDataset(Dataset):
         self.return_tracks = return_tracks
         self.event_type = event_type
         self.build_calohit_associations = build_calohit_associations
+
+        # Sihit selection cuts
+        self.sihit_volume_ids = sihit_volume_ids
+        self.sihit_max_abs_eta = sihit_max_abs_eta
+        self.max_num_particles = max_num_particles
+
         self.debug = debug
 
     @staticmethod
@@ -240,13 +298,13 @@ class ColliderMLDataset(Dataset):
         row_in_group_idx = int(event_idx - row_group_starts[row_group_idx])
         return row_group_idx, row_in_group_idx
 
-    def _get_row_group_array(self, path: Path, row_group_idx: int) -> ak.Array:
-        key = (str(path), row_group_idx)
+    def _get_row_group_array(self, path: Path, row_group_idx: int, columns: list[str] | None = None) -> ak.Array:
+        key = (str(path), row_group_idx, tuple(columns) if columns is not None else None)
         if key in self._row_group_cache:
             self._row_group_cache.move_to_end(key)
             return self._row_group_cache[key]
 
-        row_group_array = ak.from_parquet(path, row_groups=[row_group_idx])
+        row_group_array = ak.from_parquet(path, row_groups=[row_group_idx], columns=columns)
         self._row_group_cache[key] = row_group_array
         self._row_group_cache.move_to_end(key)
 
@@ -255,9 +313,9 @@ class ColliderMLDataset(Dataset):
 
         return row_group_array
 
-    def _read_event_from_file(self, path: Path, event_idx: int) -> ak.Record:
+    def _read_event_from_file(self, path: Path, event_idx: int, columns: list[str] | None = None) -> ak.Record:
         row_group_idx, row_in_group_idx = self._get_row_group_lookup(path, event_idx)
-        row_group_array = self._get_row_group_array(path, row_group_idx)
+        row_group_array = self._get_row_group_array(path, row_group_idx, columns)
         return row_group_array[row_in_group_idx]
 
     def _debug(self, message: str) -> None:
@@ -525,8 +583,12 @@ class ColliderMLDataset(Dataset):
             targets[f"particle_{class_name}"] = class_mask
 
     def _build_particle_kinematic_mask(self, targets: dict[str, torch.Tensor]) -> torch.Tensor:
-        particle_valid = targets["particle_pt"] >= self.particle_min_pt
-        particle_valid = particle_valid & (torch.abs(targets["particle_eta"]) <= self.particle_max_abs_eta)
+        # None for a cut means "no cut" (leave that dimension unrestricted).
+        particle_valid = torch.ones_like(targets["particle_pt"], dtype=torch.bool)
+        if self.particle_min_pt is not None:
+            particle_valid = particle_valid & (targets["particle_pt"] >= self.particle_min_pt)
+        if self.particle_max_abs_eta is not None:
+            particle_valid = particle_valid & (torch.abs(targets["particle_eta"]) <= self.particle_max_abs_eta)
 
         if not self.particle_include_neutral:
             particle_valid = particle_valid & (~targets["particle_neutral"])
@@ -585,12 +647,23 @@ class ColliderMLDataset(Dataset):
             sihits,
             "sihit",
             int_fields={"particle_id"},
+            skip_fields={"event_id"},
             default_dtype=torch.float32,
         )
         self._scale_xyz_inplace(inputs, "sihit", scale=1e-3)
         self._add_cylindrical_coords_inplace(inputs, "sihit")
         inputs["sihit_valid"] = self._valid_mask_like(inputs["sihit_x"])
         return inputs
+
+    def _build_sihit_mask(self, inputs: dict[str, torch.Tensor]) -> torch.Tensor:
+        mask = torch.ones(inputs["sihit_x"].shape[0], dtype=torch.bool)
+        if self.sihit_volume_ids is not None:
+            volume_ids = inputs["sihit_volume_id"].to(torch.int64)
+            allowed = torch.tensor(self.sihit_volume_ids, dtype=torch.int64)
+            mask &= torch.isin(volume_ids, allowed)
+        if self.sihit_max_abs_eta is not None:
+            mask &= torch.abs(inputs["sihit_eta"]) <= self.sihit_max_abs_eta
+        return mask
 
     def _read_calohits(self, particle_path: Path, event_idx: int) -> ak.Record:
         t_calo_read = perf_counter()
@@ -770,24 +843,21 @@ class ColliderMLDataset(Dataset):
         targets["track_sihit_indices"] = track_sihit_indices
         targets["track_sihit_shape"] = track_sihit_shape
 
-    @staticmethod
-    def _pad_particle_targets_inplace(targets: dict[str, torch.Tensor]) -> None:
-        particle_keys = [
-            k for k in targets if k.startswith("particle_") and not k.startswith("particle_sihit_") and not k.startswith("particle_calohit_")
-        ]
-        if not particle_keys:
-            return
+    def _pad_particle_targets_inplace(self, targets: dict[str, torch.Tensor]) -> None:
+        n = self.max_num_particles
+        if n is None:
+            return  # no fixed query count to pad to
 
-        pad_size = max(int(targets[k].size(0)) for k in particle_keys)
-        for key in particle_keys:
-            values = targets[key]
-            extra = pad_size - int(values.size(0))
-            if extra <= 0:
+        for key, values in targets.items():
+            if not key.startswith("particle_"):
                 continue
-
-            pad_shape = (extra, *values.shape[1:])
+            # Skip sparse CSR tensors — they cannot be padded along dim 0 like dense tensors
+            if key.startswith("particle_sihit_indptr") or key.startswith("particle_sihit_indices") or \
+               key.startswith("particle_sihit_shape") or key.startswith("particle_calohit_"):
+                continue
             pad_value = False if values.dtype is torch.bool else 0
-            targets[key] = torch.cat([values, values.new_full(pad_shape, pad_value)], dim=0)
+            target_shape = (n, *(-1,) * (values.dim() - 1))
+            targets[key] = pad_to_size(values, target_shape, pad_value)
 
     def load_event(self, sample_id):
         t0 = perf_counter()
@@ -802,8 +872,8 @@ class ColliderMLDataset(Dataset):
 
         # Read in the data
         t_read = perf_counter()
-        particles = self._read_event_from_file(particle_path, event_idx)
-        sihits = self._read_event_from_file(sihit_path, event_idx)
+        particles = self._read_event_from_file(particle_path, event_idx, self._particle_read_columns)
+        sihits = self._read_event_from_file(sihit_path, event_idx, self._sihit_read_columns)
         self._debug(f"read particles+sihits in {perf_counter() - t_read:.3f}s")
 
         targets = self._build_particle_targets(particles)
@@ -813,6 +883,12 @@ class ColliderMLDataset(Dataset):
 
         targets["particle_valid"] = self._valid_mask_like(targets["particle_pt"])
         inputs = self._build_sihit_inputs(sihits)
+
+        sihit_mask = self._build_sihit_mask(inputs)
+        if not sihit_mask.all():
+            self._apply_mask_to_prefixed_keys(inputs, "sihit_", sihit_mask)
+            self._debug(f"after sihit cuts: n_sihits={sihit_mask.sum()}")
+
         targets["sihit_valid"] = inputs["sihit_valid"]
 
         t_assoc = perf_counter()
@@ -840,6 +916,17 @@ class ColliderMLDataset(Dataset):
             particle_valid,
             skip_prefixes=("particle_sihit_", "particle_calohit_"),
         )
+
+        # Truncate to max_num_particles if needed, keeping highest-pT particles
+        # (None disables truncation, keeping every particle).
+        num_particles = int(targets["particle_particle_id"].size(0))
+        if self.max_num_particles is not None and num_particles > self.max_num_particles:
+            self._debug(f"truncating {num_particles} particles to max_num_particles={self.max_num_particles}")
+            pt_order = torch.argsort(targets["particle_pt"], descending=True)
+            truncate_mask = torch.zeros(num_particles, dtype=torch.bool)
+            truncate_mask[pt_order[: self.max_num_particles]] = True
+            self._apply_mask_to_prefixed_keys(targets, "particle_", truncate_mask, skip_prefixes=("particle_sihit_", "particle_calohit_"))
+
         particle_sihit_indptr, particle_sihit_indices, particle_sihit_shape, particle_num_sihits = self._build_particle_sihit_fields(
             targets["particle_particle_id"],
             inputs["sihit_particle_id"],
@@ -872,6 +959,30 @@ class ColliderMLDataset(Dataset):
         targets["particle_sihit_shape"] = particle_sihit_shape
         targets["particle_num_sihits"] = particle_num_sihits
 
+        num_sihits = int(particle_sihit_shape[1].item())
+
+        # Per-hit label: a sihit is valid if it belongs to any reconstructable
+        # particle, i.e. its column index appears in the CSR indices. O(nnz) and
+        # needs no dense matrix, so compute it directly in every mode.
+        sihit_on_valid_particle = torch.zeros(num_sihits, dtype=torch.bool)
+        if particle_sihit_indices.numel() > 0:
+            sihit_on_valid_particle[particle_sihit_indices] = True
+        targets["sihit_on_valid_particle"] = sihit_on_valid_particle
+
+        # Tracking mode additionally needs the dense (num_particles, num_sihits)
+        # association mask for the object queries. The hit filter never uses it,
+        # and callers that only read the CSR can skip it via build_dense_masks.
+        if not self.hit_filter and self.build_dense_masks:
+            num_particles = int(particle_sihit_shape[0].item())
+            particle_sihit_valid = torch.zeros(num_particles, num_sihits, dtype=torch.bool)
+            if particle_sihit_indices.numel() > 0:
+                row_ids = torch.repeat_interleave(
+                    torch.arange(num_particles),
+                    torch.diff(particle_sihit_indptr).to(torch.int64),
+                )
+                particle_sihit_valid[row_ids, particle_sihit_indices] = True
+            targets["particle_sihit_valid"] = particle_sihit_valid
+
         # Return the calorimeter hit info if requested
         if self.return_calohits:
             self._add_calohits(inputs, targets, particle_path, event_idx, calohits=calohits)
@@ -899,7 +1010,11 @@ class ColliderMLDataset(Dataset):
         sample_id = self.sample_ids[idx]
         inputs, targets = self.load_event(sample_id)
 
-        self._pad_particle_targets_inplace(targets)
+        # Padding particle targets to max_num_particles is only needed for the
+        # tracking task (target objects must match the fixed query count). The
+        # hit filter never reads particle targets, so skip it entirely.
+        if not self.hit_filter:
+            self._pad_particle_targets_inplace(targets)
 
         # Add dummy batch dimension
         # TODO: Support batch size > 1
@@ -907,6 +1022,49 @@ class ColliderMLDataset(Dataset):
         targets_out = {k: v.unsqueeze(0) for k, v in targets.items()}
 
         return inputs_out, targets_out
+
+
+class ShardContiguousSampler(Sampler):
+    """Yield event indices grouped by their parquet shard to slash redundant decodes.
+
+    Each shard stores ~100 events in a single row-group, so reading one event decodes
+    the whole group. Under a global shuffle those decodes are ~all cache-misses (a
+    100-event decode per event used). This sampler keeps a shard's events contiguous
+    in the index stream, so a worker moving through them hits its row-group cache after
+    the first event -- each shard is decoded ~once per worker per epoch instead of ~100x.
+
+    Randomness is preserved for training by shuffling the shard order and the events
+    within each shard every epoch (fresh each ``__iter__``); with ``shuffle=False``
+    (validation/test) it yields a stable shard-contiguous order.
+    """
+
+    def __init__(self, dataset: ColliderMLDataset, shuffle: bool, seed: int = 0):
+        self.shuffle = shuffle
+        self.seed = seed
+        self.epoch = 0
+        # Group the in-use sample ids (0..num_events-1) by shard index, preserving order.
+        groups: dict[int, list[int]] = {}
+        for sid in range(int(dataset.num_events)):
+            groups.setdefault(dataset.sample_index[sid][0], []).append(sid)
+        self._shard_groups = list(groups.values())
+        self._num_events = int(dataset.num_events)
+
+    def __len__(self) -> int:
+        return self._num_events
+
+    def __iter__(self):
+        if not self.shuffle:
+            for group in self._shard_groups:
+                yield from group
+            return
+        g = torch.Generator()
+        g.manual_seed(self.seed + self.epoch)
+        self.epoch += 1
+        shard_order = torch.randperm(len(self._shard_groups), generator=g).tolist()
+        for s in shard_order:
+            group = self._shard_groups[s]
+            for i in torch.randperm(len(group), generator=g).tolist():
+                yield group[i]
 
 
 class ColliderMLDataModule(LightningDataModule):
@@ -920,6 +1078,7 @@ class ColliderMLDataModule(LightningDataModule):
         num_test: int,
         test_dir: str | None = None,
         pin_memory: bool = True,
+        prefetch_factor: int = 3,
         **kwargs,
     ):
         super().__init__()
@@ -932,6 +1091,7 @@ class ColliderMLDataModule(LightningDataModule):
         self.num_val = num_val
         self.num_test = num_test
         self.pin_memory = pin_memory
+        self.prefetch_factor = prefetch_factor
         self.kwargs = kwargs
 
     def setup(self, stage: str):
@@ -952,14 +1112,23 @@ class ColliderMLDataModule(LightningDataModule):
             print(f"Created test dataset with {len(self.test_dset):,} events")
 
     def get_dataloader(self, stage: str, dataset: ColliderMLDataset, shuffle: bool):
+        # Shard-contiguous sampling keeps each shard's events together so the row-group
+        # cache is reused (see ShardContiguousSampler); it replaces DataLoader shuffle.
+        sampler = ShardContiguousSampler(dataset, shuffle=shuffle)
+        # persistent_workers keeps worker processes (and their warm decode caches) alive
+        # across epochs and validation checks; prefetch_factor overlaps IO with compute.
+        extra = {}
+        if self.num_workers > 0:
+            extra["persistent_workers"] = True
+            extra["prefetch_factor"] = self.prefetch_factor
         return DataLoader(
             dataset=dataset,
             batch_size=None,
             collate_fn=None,
-            sampler=None,
+            sampler=sampler,
             num_workers=self.num_workers,
-            shuffle=shuffle,
             pin_memory=self.pin_memory,
+            **extra,
         )
 
     def train_dataloader(self):

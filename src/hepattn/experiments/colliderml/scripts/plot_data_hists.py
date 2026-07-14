@@ -93,6 +93,10 @@ SELECTION_COLOURS = {
     "is_tau": "tab:pink",
 }
 
+ETA_THRESHOLDS = np.array([0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 3.5, 4.0])
+NUM_SCAN_EVENTS = 100
+CANDIDATE_ETA_CUTS = [1.0, 1.5, 2.0, 2.5]
+
 CALIBRATED_ENERGY_BINS = np.geomspace(1e-2, 1e1, 40)
 CALIBRATED_ENERGY_ALIASES = {
     "particle_energy_ecal_calib": "ECAL Calibrated Energy [GeV]",
@@ -133,6 +137,29 @@ def _build_dataset_kwargs(config):
         "return_calohits": True,
         "return_tracks": False,
         "build_calohit_associations": True,
+        "sihit_volume_ids": config.get("sihit_volume_ids"),
+        "sihit_max_abs_eta": config.get("sihit_max_abs_eta"),
+    }
+
+
+def _build_scan_dataset_kwargs(config):
+    """Dataset with no eta cuts applied, so we can scan thresholds manually.
+    Uses more events than the histogram dataset for reliable mean/max estimates."""
+    return {
+        "dirpath": config.get("test_dir", config["train_dir"]),
+        "num_events": NUM_SCAN_EVENTS,
+        "particle_min_pt": config["particle_min_pt"],
+        "particle_max_abs_eta": 4.0,
+        "particle_hit_cuts": config.get("particle_hit_cuts"),
+        "particle_include_charged": config["particle_include_charged"],
+        "particle_include_neutral": config["particle_include_neutral"],
+        "event_type": config.get("event_type", "ttbar"),
+        "debug": False,
+        "return_calohits": False,
+        "return_tracks": False,
+        "build_calohit_associations": False,
+        "sihit_volume_ids": config.get("sihit_volume_ids"),
+        "sihit_max_abs_eta": None,
     }
 
 
@@ -406,6 +433,98 @@ def _plot_hist_group(hist_group, fields, scales, aliases, x_label_prefix, plot_p
     plt.close(fig)
 
 
+def _collect_event_counts_vs_eta(inputs, targets, eta_thresholds):
+    """Return Si hit and particle counts for each eta threshold for a single event."""
+    sihit_valid = _to_numpy(inputs["sihit_valid"][0]).astype(bool)
+    sihit_abs_eta = np.abs(_to_numpy(inputs["sihit_eta"][0])[sihit_valid])
+
+    particle_valid = _to_numpy(targets["particle_valid"][0]).astype(bool)
+    particle_abs_eta = np.abs(_to_numpy(targets["particle_eta"][0])[particle_valid])
+
+    sihit_counts = np.array([(sihit_abs_eta <= t).sum() for t in eta_thresholds])
+    particle_counts = np.array([(particle_abs_eta <= t).sum() for t in eta_thresholds])
+    return sihit_counts, particle_counts
+
+
+def _plot_event_level_eta_scan(sihit_counts, particle_counts, eta_thresholds, plot_path):
+    """Two-panel plot of Si hit and particle counts per event vs |eta| cut."""
+    sihit_counts = np.array(sihit_counts)    # [num_events, num_thresholds]
+    particle_counts = np.array(particle_counts)
+
+    fig, axes = plt.subplots(1, 2)
+    fig.set_size_inches(10, 4)
+
+    panels = [
+        (axes[0], sihit_counts, "Si Hits per Event", "tab:blue", 10_000),
+        (axes[1], particle_counts, "Particles per Event", "tab:orange", None),
+    ]
+    for ax, counts, ylabel, color, target in panels:
+        mean = counts.mean(axis=0)
+        std = counts.std(axis=0)
+        maximum = counts.max(axis=0)
+
+        ax.plot(eta_thresholds, mean, color=color, label="Mean")
+        ax.fill_between(eta_thresholds, mean - std, mean + std, alpha=0.3, color=color, label=r"Mean $\pm 1\sigma$")
+        ax.plot(eta_thresholds, maximum, color=color, linestyle="--", label="Max")
+
+        if target is not None:
+            ax.axhline(target, color="red", linestyle=":", label=f"{target:,} target")
+
+        ax.set_xlabel(r"$|\eta|$ Cut")
+        ax.set_ylabel(ylabel)
+        ax.legend(fontsize=8)
+        ax.grid(zorder=0, alpha=0.25, linestyle="--")
+
+    fig.tight_layout()
+    fig.savefig(plot_path / "colliderml_event_level_eta_scan.png")
+    plt.close(fig)
+
+
+def _plot_sihit_count_distributions(sihit_counts_per_event, eta_thresholds, candidate_eta_cuts, plot_path):
+    """Per-event Si hit count distributions at a few candidate eta cuts."""
+    sihit_counts = np.array(sihit_counts_per_event)  # [num_events, num_thresholds]
+
+    fig, ax = plt.subplots(1, 1)
+    fig.set_size_inches(6, 4)
+
+    colors = plt.cm.viridis(np.linspace(0.1, 0.9, len(candidate_eta_cuts)))
+    for color, eta_cut in zip(colors, candidate_eta_cuts):
+        idx = np.argmin(np.abs(eta_thresholds - eta_cut))
+        counts = sihit_counts[:, idx]
+        ax.hist(counts, bins=20, alpha=0.6, color=color, label=rf"$|\eta| < {eta_thresholds[idx]:.2f}$", edgecolor="none")
+
+    ax.axvline(10_000, color="red", linestyle="--", label="10k target")
+    ax.set_xlabel("Si Hits per Event")
+    ax.set_ylabel("Events")
+    ax.legend(fontsize=8)
+    ax.grid(zorder=0, alpha=0.25, linestyle="--")
+
+    fig.tight_layout()
+    fig.savefig(plot_path / "colliderml_event_sihit_count_distributions.png")
+    plt.close(fig)
+
+
+def _plot_sihit_eta_distribution(sihit_abs_eta_all, plot_path):
+    """Distribution of Si hit |eta| values across all scan events."""
+    fig, ax = plt.subplots(1, 1)
+    fig.set_size_inches(6, 4)
+
+    ax.hist(sihit_abs_eta_all, bins=np.linspace(0.0, 4.0, 81), color="tab:blue", edgecolor="none")
+
+    for eta_cut in CANDIDATE_ETA_CUTS:
+        ax.axvline(eta_cut, color="red", linestyle="--", label=rf"$|\eta| = {eta_cut}$")
+
+    ax.set_xlabel(r"Si Hit $|\eta|$")
+    ax.set_ylabel("Count")
+    ax.set_yscale("log")
+    ax.legend(fontsize=8)
+    ax.grid(zorder=0, alpha=0.25, linestyle="--")
+
+    fig.tight_layout()
+    fig.savefig(plot_path / "colliderml_sihit_eta_distribution.png")
+    plt.close(fig)
+
+
 def main():
     config = _load_config()
     dataset = ColliderMLDataset(**_build_dataset_kwargs(config))
@@ -436,8 +555,28 @@ def main():
             hcal_calib_by_class[selection].append(energy_hcal_calib[mask])
             total_calib_by_class[selection].append(energy_total_calib[mask])
 
+    # Event-level eta scan (separate dataset with no eta cuts applied)
+    scan_dataset = ColliderMLDataset(**_build_scan_dataset_kwargs(config))
+    num_scan_events = min(NUM_SCAN_EVENTS, len(scan_dataset))
+    sihit_counts_per_event = []
+    particle_counts_per_event = []
+    sihit_abs_eta_chunks = []
+    for event_idx in tqdm(range(num_scan_events), desc="Eta scan"):
+        scan_inputs, scan_targets = scan_dataset[event_idx]
+        sihit_counts, particle_counts = _collect_event_counts_vs_eta(scan_inputs, scan_targets, ETA_THRESHOLDS)
+        sihit_counts_per_event.append(sihit_counts)
+        particle_counts_per_event.append(particle_counts)
+
+        sihit_valid = _to_numpy(scan_inputs["sihit_valid"][0]).astype(bool)
+        sihit_abs_eta_chunks.append(np.abs(_to_numpy(scan_inputs["sihit_eta"][0])[sihit_valid]))
+
     plot_dir = Path(__file__).resolve().parents[1] / "plots" / "data"
     plot_dir.mkdir(parents=True, exist_ok=True)
+
+    sihit_abs_eta_all = np.concatenate(sihit_abs_eta_chunks)
+    _plot_event_level_eta_scan(sihit_counts_per_event, particle_counts_per_event, ETA_THRESHOLDS, plot_dir)
+    _plot_sihit_count_distributions(sihit_counts_per_event, ETA_THRESHOLDS, CANDIDATE_ETA_CUTS, plot_dir)
+    _plot_sihit_eta_distribution(sihit_abs_eta_all, plot_dir)
 
     particle_plots = {
         "colliderml_particle_kinematics": ["pt", "eta", "phi"],
