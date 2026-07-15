@@ -32,19 +32,30 @@ Ordering = Callable[[np.ndarray, np.ndarray, np.random.Generator], np.ndarray]
 _EPS = 1e-12
 
 
-def _quantize(values: np.ndarray, bits: int) -> np.ndarray:
-    """Map a 1D float array onto integer grid coordinates in ``[0, 2**bits)``.
+def _quantize(values: np.ndarray, side: int, *, levels: int | None = None, vrange: tuple[float, float] | None = None) -> np.ndarray:
+    """Map a 1D float array onto integer grid coordinates in ``[0, side)``.
 
-    Uses per-array min/max so it is robust to whatever range the coordinate
-    happens to span (rank-preserving, which is all the curve needs).
+    ``levels`` (default ``side``) is the number of distinct grid coordinates this
+    axis is mapped onto: with ``levels < side`` the axis is compressed into the
+    ``[0, levels)`` sub-band of the square ``[0, side)`` Hilbert grid (it is *not*
+    stretched back across the full grid), so the curve travels further along the
+    other, full-resolution axis before stepping in this one -- this is exactly how
+    the eta:phi aspect ratio is set. ``vrange`` optionally fixes the ``(min, max)``
+    normalisation window instead of the per-array min/max (robust to per-event
+    outliers); the mapping is rank-preserving either way, which is all the curve
+    needs.
     """
-    n = 1 << bits
-    vmin = float(values.min())
-    vmax = float(values.max())
-    if vmax - vmin < _EPS:
+    if levels is None:
+        levels = side
+    if vrange is None:
+        vmin = float(values.min())
+        vmax = float(values.max())
+    else:
+        vmin, vmax = float(vrange[0]), float(vrange[1])
+    if vmax - vmin < _EPS or levels <= 1:
         return np.zeros(values.shape, dtype=np.int64)
-    scaled = (values - vmin) / (vmax - vmin) * (n - 1)
-    return np.clip(np.floor(scaled + 0.5), 0, n - 1).astype(np.int64)
+    scaled = np.clip((values - vmin) / (vmax - vmin), 0.0, 1.0) * (levels - 1)
+    return np.clip(np.floor(scaled + 0.5), 0, side - 1).astype(np.int64)
 
 
 def _hilbert_xy2d(side: int, x: np.ndarray, y: np.ndarray) -> np.ndarray:
@@ -86,11 +97,30 @@ def order_phi(eta: np.ndarray, phi: np.ndarray, rng: np.random.Generator) -> np.
     return np.argsort(phi, kind="stable")
 
 
-def order_hilbert(eta: np.ndarray, phi: np.ndarray, rng: np.random.Generator, *, bits: int = 10) -> np.ndarray:
-    """Order by a Hilbert curve over the (eta, phi) plane (2**bits grid per axis)."""
+def order_hilbert(
+    eta: np.ndarray,
+    phi: np.ndarray,
+    rng: np.random.Generator,
+    *,
+    bits: int = 10,
+    aspect: float = 1.0,
+    eta_range: tuple[float, float] | None = None,
+    phi_range: tuple[float, float] | None = None,
+) -> np.ndarray:
+    """Order by a Hilbert curve over the (eta, phi) plane (2**bits grid per axis).
+
+    ``aspect`` = eta-levels : phi-levels. ``aspect < 1`` is *phi-primary* (phi keeps
+    the full grid resolution while eta is coarsened, so the curve travels further in
+    phi before stepping in eta); ``aspect > 1`` is eta-primary; ``aspect = 1`` is
+    isotropic (the default, equal resolution on both axes). ``eta_range`` /
+    ``phi_range`` optionally fix the ``(min, max)`` normalisation window instead of
+    using the per-event min/max.
+    """
     side = 1 << bits
-    x = _quantize(eta, bits)
-    y = _quantize(phi, bits)
+    eta_levels = max(1, round(side * min(aspect, 1.0)))
+    phi_levels = max(1, round(side * min(1.0 / aspect, 1.0)))
+    x = _quantize(eta, side, levels=eta_levels, vrange=eta_range)
+    y = _quantize(phi, side, levels=phi_levels, vrange=phi_range)
     d = _hilbert_xy2d(side, x, y)
     return np.argsort(d, kind="stable")
 
