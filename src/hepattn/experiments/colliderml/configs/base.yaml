@@ -2,9 +2,9 @@ name: ColliderML_Tracking_Example
 
 data:
   # Paths to preprocessed data directories
-  train_dir: /share/rcif2/maxhart/data/colliderml/v1/pu200/
-  val_dir: /share/rcif2/maxhart/data/colliderml/v1/pu200/
-  test_dir: /share/rcif2/maxhart/data/colliderml/v1/pu200/
+  train_dir: /share/rcif2/ljohnson/data/colliderml/v1/pu200/train
+  val_dir: /share/rcif2/ljohnson/data/colliderml/v1/pu200/val
+  test_dir: /share/rcif2/ljohnson/data/colliderml/v1/pu200/val
 
   # Event process name in this directory layout
   event_type: ttbar

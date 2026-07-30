@@ -44,7 +44,9 @@ for _thread_var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"
 
 import argparse
 import inspect
+import math
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -52,7 +54,7 @@ import pandas as pd
 import yaml
 
 from hepattn.experiments.colliderml.data import ColliderMLDataset
-from hepattn.experiments.colliderml.scripts.orderings import SORTERS
+from hepattn.experiments.colliderml.scripts.orderings import SORTERS, order_hilbert
 
 try:
     from tqdm import tqdm
@@ -93,12 +95,17 @@ CUSTOM_CUTS = {
 }
 
 
+# Sentinel: leave a setting at whatever the config (or CUSTOM_CUTS) specifies.
+_INHERIT = object()
+
+
 def build_dataset(
     config_path: Path,
     split: str,
     num_events: int | None,
     custom_cuts: bool = False,
     sihit_volumes: list[int] | None = None,
+    sihit_max_abs_eta=_INHERIT,
 ) -> ColliderMLDataset:
     """Instantiate the real tracking dataset straight from a training config.
 
@@ -106,7 +113,10 @@ def build_dataset(
     replaced by the hand-edited ``CUSTOM_CUTS`` block, so the orderings are measured
     on whatever selection you configure there. ``sihit_volumes`` overrides which
     detector volumes are kept (e.g. barrel-only vs endcap-only); it takes precedence
-    over both the config and ``custom_cuts``.
+    over both the config and ``custom_cuts``. ``sihit_max_abs_eta`` overrides the
+    hit-level ``|eta|`` cut (``None`` = keep all eta) -- important because the
+    training config's cut (e.g. 1.0) silently removes the entire endcap, collapsing
+    any endcap/full-detector volume selection down to the central barrel.
     """
     with config_path.open() as f:
         config = yaml.safe_load(f)
@@ -134,6 +144,8 @@ def build_dataset(
         kwargs.update(CUSTOM_CUTS)
     if sihit_volumes is not None:
         kwargs["sihit_volume_ids"] = sihit_volumes
+    if sihit_max_abs_eta is not _INHERIT:
+        kwargs["sihit_max_abs_eta"] = sihit_max_abs_eta
     return ColliderMLDataset(**kwargs)
 
 
@@ -245,6 +257,27 @@ def available_cpus() -> int:
         return os.cpu_count() or 1
 
 
+def build_sorter_fns(run_cfg: dict) -> dict:
+    """Ordered ``{display_name: ordering_fn}`` for this run.
+
+    Always includes the base ``--sorters`` (random/phi/hilbert/lsh). If
+    ``--hilbert-aspects`` is given, one extra ``hilbert r=<a>`` variant is added per
+    aspect ratio (eta:phi levels; r<1 = phi-primary), sharing the run's range mode
+    (per-event min/max, or the fixed window from ``--hilbert-fixed-range``).
+    """
+    fns: dict = {name: SORTERS[name] for name in run_cfg["sorters"]}
+    aspects = run_cfg.get("hilbert_aspects")
+    if aspects:
+        if run_cfg["hilbert_fixed_range"]:
+            eta_range = tuple(run_cfg["hilbert_eta_range"])
+            phi_range = (-math.pi, math.pi)
+        else:
+            eta_range = phi_range = None
+        for a in aspects:
+            fns[f"hilbert r={a:g}"] = partial(order_hilbert, aspect=a, eta_range=eta_range, phi_range=phi_range)
+    return fns
+
+
 # Per-process state. Built once per worker (or once in the main process for the
 # serial path) rather than shipped across the pool, since the dataset is heavy.
 _WORKER: dict = {}
@@ -270,8 +303,9 @@ def _init_worker(run_cfg: dict) -> None:
             run_cfg["num_events"],
             custom_cuts=run_cfg["custom_cuts"],
             sihit_volumes=run_cfg["sihit_volumes"],
+            sihit_max_abs_eta=run_cfg["sihit_max_abs_eta"],
         ),
-        sorters=run_cfg["sorters"],
+        sorter_fns=build_sorter_fns(run_cfg),
         min_hits=run_cfg["min_hits"],
         seed=run_cfg["seed"],
         eta_min=run_cfg["particle_eta_min"],
@@ -301,7 +335,7 @@ def event_spreads(idx: int) -> dict[str, np.ndarray]:
 
     empty = np.zeros(0, dtype=np.int64)
     if num_hits == 0 or indices.size == 0:
-        return {name: empty for name in _WORKER["sorters"]}
+        return {name: empty for name in _WORKER["sorter_fns"]}
 
     # Truth-eta particle selection (population filter; leaves hits/ordering intact).
     keep_mask = None
@@ -316,8 +350,8 @@ def event_spreads(idx: int) -> dict[str, np.ndarray]:
 
     rng = np.random.default_rng([_WORKER["seed"], int(sample_id)])
     out = {}
-    for name in _WORKER["sorters"]:
-        order = SORTERS[name](eta, phi, rng)
+    for name, fn in _WORKER["sorter_fns"].items():
+        order = fn(eta, phi, rng)
         out[name] = particle_spreads(order, indptr, indices, _WORKER["min_hits"], num_hits, keep_mask)
     return out
 
@@ -424,6 +458,21 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--split", choices=list(SPLIT_TO_KEYS), default="val", help="Which data split to benchmark on.")
     p.add_argument("--num-events", type=int, default=100, help="Number of events (-1 for all; default 100).")
     p.add_argument("--sorters", nargs="+", default=list(SORTERS), choices=list(SORTERS), help="Subset of orderings to benchmark.")
+    p.add_argument(
+        "--hilbert-aspects",
+        nargs="+",
+        type=float,
+        default=None,
+        help="Add Hilbert variants at these eta:phi aspect ratios (r<1 = phi-primary, r>1 = eta-primary, "
+        "r=1 = isotropic). e.g. --hilbert-aspects 0.125 0.25 1 8 adds 'hilbert r=0.125' ... rows.",
+    )
+    p.add_argument(
+        "--hilbert-fixed-range",
+        action="store_true",
+        help="Normalise the --hilbert-aspects variants with a fixed window (phi in [-pi, pi], eta from "
+        "--hilbert-eta-range) instead of per-event min/max.",
+    )
+    p.add_argument("--hilbert-eta-range", nargs=2, type=float, default=(-4.0, 4.0), help="Fixed eta (min max) for --hilbert-fixed-range (default -4 4).")
     p.add_argument("--windows", nargs="+", type=int, default=[128, 256, 512, 1024], help="Attention window sizes for containment.")
     p.add_argument("--window-metric", choices=["span", "block", "mutual"], default="span", help="Containment definition (see module docstring).")
     p.add_argument("--min-hits", type=int, default=3, help="Ignore particles with fewer surviving sihits than this.")
@@ -437,7 +486,15 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         type=int,
         default=None,
-        help="Restrict hits to these detector volume IDs (barrel: 17 24 29; endcap: 16 18 23 25 28 30). Overrides config/--custom-cuts.",
+        help="Restrict hits to these detector volume IDs (barrel: 17 24 29; endcap: 16 18 23 25 28 30; "
+        "pixel: 16 17 18). Overrides config/--custom-cuts.",
+    )
+    p.add_argument(
+        "--sihit-max-abs-eta",
+        default="inherit",
+        help="Override the hit-level |eta| cut. A number caps |eta|; 'none' keeps all eta; 'inherit' "
+        "(default) uses the config's value. NOTE: the config's cut (e.g. 1.0) removes the whole endcap, "
+        "so pass 'none' (or a large value) for any endcap / full-detector region.",
     )
     p.add_argument("--particle-eta-min", type=float, default=None, help="Keep only particles with truth |eta| >= this (population filter).")
     p.add_argument("--particle-eta-max", type=float, default=None, help="Keep only particles with truth |eta| <= this (population filter).")
@@ -473,9 +530,19 @@ def _reach_markdown(rtable: pd.DataFrame) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _parse_eta_override(value: str):
+    """Map --sihit-max-abs-eta ('inherit' | 'none' | number) to the build_dataset arg."""
+    if isinstance(value, str) and value.lower() == "inherit":
+        return _INHERIT
+    if isinstance(value, str) and value.lower() in ("none", "null", "off"):
+        return None
+    return float(value)
+
+
 def main() -> None:
     args = parse_args()
     num_events = None if args.num_events == -1 else args.num_events
+    sihit_max_abs_eta = _parse_eta_override(args.sihit_max_abs_eta)
     run_cfg = {
         "config": args.config,
         "split": args.split,
@@ -485,20 +552,25 @@ def main() -> None:
         "seed": args.seed,
         "custom_cuts": args.custom_cuts,
         "sihit_volumes": args.sihit_volumes,
+        "sihit_max_abs_eta": sihit_max_abs_eta,
         "particle_eta_min": args.particle_eta_min,
         "particle_eta_max": args.particle_eta_max,
         "windows": args.windows,
         "max_tracks": args.max_tracks,
+        "hilbert_aspects": args.hilbert_aspects,
+        "hilbert_fixed_range": args.hilbert_fixed_range,
+        "hilbert_eta_range": tuple(args.hilbert_eta_range),
     }
 
-    # Build once up front (also gives us the event count n).
+    # Build once up front (also gives us the event count n and full sorter list).
     _init_worker(run_cfg)
     n = len(_WORKER["dataset"])
+    sorter_names = list(_WORKER["sorter_fns"])
 
     workers = available_cpus() if args.workers == -1 else max(1, args.workers)
     workers = min(workers, n)  # no point spawning more workers than events
 
-    spreads: dict[str, list[np.ndarray]] = {name: [] for name in args.sorters}
+    spreads: dict[str, list[np.ndarray]] = {name: [] for name in sorter_names}
 
     def accumulate(res: dict[str, np.ndarray]) -> None:
         for name, arr in res.items():
@@ -519,7 +591,7 @@ def main() -> None:
 
     rows = {}
     n_particles = 0
-    for name in args.sorters:
+    for name in sorter_names:
         pooled = np.concatenate(spreads[name]) if spreads[name] else np.zeros(0, dtype=np.int64)
         if pooled.size == 0:
             print(f"WARNING: no particles passed the cuts for sorter '{name}'")
@@ -537,6 +609,8 @@ def main() -> None:
     cuts_state = "custom (CUSTOM_CUTS block)" if args.custom_cuts else "ON (from config)"
     volumes = _WORKER["dataset"].sihit_volume_ids
     vol_desc = "all" if volumes is None else str(volumes)
+    hit_eta = _WORKER["dataset"].sihit_max_abs_eta
+    hit_eta_desc = "all" if hit_eta is None else f"|eta|<={hit_eta:g}"
     if args.particle_eta_min is not None or args.particle_eta_max is not None:
         lo = args.particle_eta_min if args.particle_eta_min is not None else 0.0
         hi = args.particle_eta_max if args.particle_eta_max is not None else float("inf")
@@ -544,10 +618,18 @@ def main() -> None:
     else:
         eta_desc = "all"
 
+    if args.hilbert_aspects:
+        rng_desc = f"fixed (eta {tuple(args.hilbert_eta_range)}, phi (-pi, pi))" if args.hilbert_fixed_range else "per-event min/max"
+        aspect_desc = f"hilbert aspects (eta:phi)={list(args.hilbert_aspects)}  range={rng_desc}"
+    else:
+        aspect_desc = None
+
     print()
     print(f"ColliderML hit-ordering benchmark  |  split={args.split}  events={n}  particles={n_particles:,}")
     print(f"spread = circular hit-position span  |  containment metric='{args.window_metric}'  min_hits={args.min_hits}  cuts={cuts_state}")
-    print(f"hit volumes={vol_desc}  |  particle truth|eta|={eta_desc}")
+    print(f"hit volumes={vol_desc}  |  hit {hit_eta_desc}  |  particle truth|eta|={eta_desc}")
+    if aspect_desc:
+        print(aspect_desc)
     print(table.to_string(formatters=fmt))
 
     md_content = None
@@ -558,9 +640,11 @@ def main() -> None:
             f"- **split:** {args.split}  |  **events:** {n}  |  **particles:** {n_particles:,}",
             f"- **spread:** circular hit-position span  |  **containment metric:** `{args.window_metric}`"
             f"  |  **min_hits:** {args.min_hits}  |  **cuts:** {cuts_state}",
-            f"- **hit volumes:** {vol_desc}  |  **particle truth \\|eta\\|:** {eta_desc}",
+            f"- **hit volumes:** {vol_desc}  |  **hit {hit_eta_desc}**  |  **particle truth \\|eta\\|:** {eta_desc}",
             "- `c@W` = percentage of particles whose hits fit within an attention window of size W",
         ]
+        if aspect_desc:
+            header_lines.append(f"- **{aspect_desc}** (`r` = eta:phi levels; r<1 = phi-primary)")
         md_content = to_markdown(table, fmt, header_lines)
 
     # Reachability table (union over K orderings; ported from Max's sorter_benchmark).
