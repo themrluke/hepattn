@@ -91,6 +91,7 @@ git = ">=2.51.0,<3"
 git-lfs = ">=3.7.0,<4"
 ninja = ">=1.13.1,<2"
 cuda = "12.8.*"
+nodejs = ">=26.5.1,<26.6"
 
 [tool.pixi.tasks.test]
 cmd = "pytest"
