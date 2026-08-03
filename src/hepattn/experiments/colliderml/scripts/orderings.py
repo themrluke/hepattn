@@ -26,6 +26,9 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import numpy as np
+import torch
+
+from hepattn.models.ordering import draw_lsh_table, lsh_order_values
 
 Ordering = Callable[[np.ndarray, np.ndarray, np.random.Generator], np.ndarray]
 
@@ -125,57 +128,29 @@ def order_hilbert(
     return np.argsort(d, kind="stable")
 
 
-def _hept_region_counts(num_regions: int, rng: np.random.Generator, num_and_hashes: int = 2) -> np.ndarray:
-    """Per-axis region counts ``[eta_count, phi_count]`` (HEPTv2 ``get_regions``).
-
-    Their product is approximately ``num_regions`` (rounded to multiples of 1/3),
-    giving the number of equal-occupancy quantile bins along eta and phi.
-    """
-    lb = 2.0
-    ub = 2 * num_regions ** (1 / num_and_hashes) - lb
-    r = rng.random(num_and_hashes) * (ub - lb) + lb
-    r = (num_regions / r.prod()) ** (1 / num_and_hashes) * r
-    return np.round(r * 3) / 3
-
-
-def _quantile_region(v: np.ndarray, count: float) -> np.ndarray:
-    """Equal-occupancy quantile-bin index (1-based) of each element."""
-    n = v.shape[0]
-    rank = np.argsort(np.argsort(v, kind="stable"), kind="stable").astype(np.float64)
-    region_size = np.ceil(n / count)
-    return rank // region_size + 1
-
-
 def order_lsh(eta: np.ndarray, phi: np.ndarray, rng: np.random.Generator, *, num_regions: int = 100) -> np.ndarray:
     """HEPTv2 locality-sensitive-hashing serialization over (eta, phi).
 
     Reproduces one OR-table/head of HEPTv2's LSH serialization (arXiv:2606.20437):
     a fixed random Gaussian projection ``alpha.(eta, phi)`` (E2LSH) plus
-    equal-occupancy quantile-bin indices in eta and phi, combined as
+    equal-occupancy quantile-bin indices in eta and phi (see
+    :func:`hepattn.models.ordering.lsh_order_values` for the exact formula). Sorting
+    by the ordering value keeps hits nearby in (eta, phi) close in the sequence.
 
-        ``o = alpha.(eta, phi) + R_eta * D + R_phi * D * (ceil(eta_count) + 1)``
-
-    where ``D`` is the range of the projection. Sorting by ``o`` orders hits by
-    their 2D (eta, phi) quantile cell (phi-major, eta-minor) and, within a cell, by
-    the random projection, so hits nearby in (eta, phi) stay close in the sequence.
-
-    The projection and region counts are drawn from ``rng``; a single call is one
-    hash table. HEPTv2 uses several *independent* such orderings (multiple heads)
-    and unions them -- see the reachability table, which runs this at several seeds.
+    A single call is one hash table drawn from ``rng``. This is a thin numpy adapter
+    over the shared library primitive (computed in float64 to match the library
+    bit-for-bit), so the benchmark and the model use identical orderings. HEPTv2
+    unions several *independent* such tables -- see the reachability bank, which runs
+    this at several fixed seeds.
     """
     n = eta.shape[0]
     if n == 0:
         return np.zeros(0, dtype=np.int64)
 
-    counts = _hept_region_counts(num_regions, rng)  # [eta_count, phi_count]
-    alpha = rng.normal(0.0, 1.0, size=2)  # E2LSH random projection
-    hashed = eta * alpha[0] + phi * alpha[1]
-    hash_shift = max(float(hashed.max() - hashed.min()), _EPS)
-
-    region_eta = _quantile_region(eta, counts[0])
-    region_phi = _quantile_region(phi, counts[1])
-    o = hashed + region_eta * hash_shift + region_phi * hash_shift * (np.ceil(counts[0]) + 1)
-    return np.argsort(o, kind="stable")
+    alpha, region_counts = draw_lsh_table(rng, num_regions)
+    coords = torch.from_numpy(np.stack([eta, phi], axis=-1).astype(np.float64))
+    o = lsh_order_values(coords, torch.from_numpy(alpha)[None], torch.from_numpy(region_counts)[None])  # (1, N)
+    return torch.argsort(o[0], stable=True).numpy().astype(np.int64)
 
 
 SORTERS: dict[str, Ordering] = {
