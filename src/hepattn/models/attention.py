@@ -63,6 +63,56 @@ def merge_masks(
     return merged_mask
 
 
+def expand_heads_for_or(x: Tensor, n_hashes: int) -> Tensor:
+    """Replicate each head ``n_hashes`` times along the head axis for OR-orderings.
+
+    ``(B, H, N, Dh) -> (B, H * n_hashes, N, Dh)``, with head ``head`` occupying rows
+    ``[head * n_hashes : (head + 1) * n_hashes]``. This head-major layout matches the
+    flattening of the ``(num_heads, n_hashes)`` rank grid (flex head index
+    ``h = head * n_hashes + hash``), so cell ``(head, hash)`` sees the same projected
+    q/k/v as its parent head while getting its own ordering's window mask.
+
+    Memory: this genuinely allocates. The ``expand`` alone is a stride-0 view, but the
+    following ``reshape`` folds that stride-0 axis into the head axis, which cannot be a
+    view, so the result is materialised at ``n_hashes`` times the input size. Applied to
+    all of q/k/v that is ``3 * n_hashes * B * H * N * Dh`` elements live at once -- the
+    dominant activation cost of the OR path at large ``N``.
+
+    Alternative worth benchmarking: issue ``n_hashes`` separate flex calls against the
+    *unreplicated* q/k/v, one per hash with its own BlockMask, and merge the outputs with
+    :func:`or_merge_lse` exactly as here. That trades this copy for ``n_hashes`` kernel
+    launches; which wins depends on ``N``.
+
+    Args:
+        x: ``(B, H, N, Dh)`` projected queries, keys or values (post-``separate_heads``).
+        n_hashes: OR hash tables per head; the replication factor.
+
+    Returns:
+        ``(B, H * n_hashes, N, Dh)`` with heads replicated head-major.
+    """
+    # x is q, k or v (1 of the 3 projected tensors)
+    b, h, n, d = x.shape  # batch size, num_heads, sequence length, head_dim
+    # batch size is always 1 here
+    return x.unsqueeze(2).expand(b, h, n_hashes, n, d).reshape(b, h * n_hashes, n, d)
+
+
+def or_merge_lse(out: Tensor, lse: Tensor, n_hashes: int) -> Tensor:
+    """Merge ``n_hashes`` OR-ordering attention outputs by log-sum-exp weights.
+
+    Args:
+        out: ``(B, H * n_hashes, N, Dh)`` per-ordering attention outputs.
+        lse: ``(B, H * n_hashes, N)`` per-ordering log-sum-exp of the scores.
+        n_hashes: Number of OR hash tables per head (the merged-away ``c`` axis).
+
+    Returns:
+        ``(B, H, N, Dh)`` merged output, ready for :meth:`Attention.recombine_heads`.
+    """
+    h = out.shape[1] // n_hashes
+    out = out.unflatten(1, (h, n_hashes))  # (B, H, C, N, Dh)
+    weights = torch.softmax(lse.unflatten(1, (h, n_hashes)), dim=2)  # (B, H, C, N) over C
+    return (out * weights.unsqueeze(-1)).sum(dim=2)
+
+
 def unpad_for_flash_varlen(x: Tensor, kv_mask: Tensor) -> tuple[Tensor, Tensor, dict]:
     """Unpad input for flash-varlen attention and return unpadded tensor and state."""
     x_flat, indices, cu_seqlens, max_seqlen, _ = unpad_input(x, kv_mask.int())  # x_flat is (total_valid_tokens, dim)
@@ -300,6 +350,7 @@ class Attention(nn.Module):
         attn_bias: Tensor | None = None,
         score_mod: _score_mod_signature | None = None,
         initial_values: dict | None = None,
+        or_n_hashes: int | None = None,
         **kwargs,
     ) -> Tensor:
         """Multi-head attention forward pass.
@@ -331,6 +382,12 @@ class Attention(nn.Module):
             Score modifier function for flex attention. If None, no score modifier is applied.
         initial_values : dict, optional
             Initial values for value residual connection.
+        or_n_hashes : int, optional
+            Number of OR hash tables per head for per-head LSH ordering (Route B). When
+            set (flex only), q/k/v are replicated across the hash axis, ``attn_mask``
+            must be a BlockMask of height ``num_heads * or_n_hashes``, and the per-hash
+            outputs are log-sum-exp merged back to ``num_heads`` heads. If None, standard
+            single-ordering attention is used.
         **kwargs : dict
             Additional keyword arguments. For flash-varlen attention, must include:
             - varlen_kwargs: dict containing cu_seqlens and max_seqlen
@@ -381,7 +438,15 @@ class Attention(nn.Module):
             if attn_mask is not None:
                 assert q.shape[0] == 1, "Flex attention with block_mask currently only supports batch size of 1."
             # TODO: Should block_mask be an argument separate from attn_mask to simplify things?
-            out = self.attn(q, k, v, block_mask=attn_mask, score_mod=score_mod)
+            if or_n_hashes is not None:
+                # Per-head OR-of-orderings (Route B): replicate heads across the hash axis,
+                # run one flex call whose BlockMask height is num_heads * or_n_hashes, then
+                # log-sum-exp merge the hash axis back down to num_heads.
+                q, k, v = (expand_heads_for_or(t, or_n_hashes) for t in (q, k, v))
+                out, lse = self.attn(q, k, v, block_mask=attn_mask, score_mod=score_mod, return_lse=True)
+                out = or_merge_lse(out, lse, or_n_hashes)
+            else:
+                out = self.attn(q, k, v, block_mask=attn_mask, score_mod=score_mod)
 
         # Standard torch attention
         elif self.attn_type == "torch":
