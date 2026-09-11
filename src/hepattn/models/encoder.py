@@ -4,11 +4,12 @@ import torch
 from torch import Tensor, nn
 from torch.nn.attention.flex_attention import create_block_mask, create_mask
 
-from hepattn.flex import relative_position, relative_position_wrapped
+from hepattn.flex import per_head_window_mask_mod, relative_position, relative_position_wrapped
 from hepattn.flex.sliding_window import sliding_window_mask, sliding_window_mask_wrapped
-from hepattn.models.attention import Attention, repad_from_flash_varlen, unpad_for_flash_varlen
+from hepattn.models.attention import FLASH_ATTN_TYPES, Attention, repad_from_flash_varlen, unpad_for_flash_varlen
 from hepattn.models.dense import Dense
 from hepattn.models.norm import NORM_TYPES, get_hybrid_norm_config
+from hepattn.models.ordering import E2LSHOrderingGrid
 
 create_block_mask = torch.compile(create_block_mask, dynamic=True)  # ty: ignore[invalid-assignment]
 
@@ -147,6 +148,9 @@ class Encoder(nn.Module):
         attn_type: str = "torch",
         window_size: int | None = None,
         window_wrap: bool = False,
+        or_n_hashes: int | None = None,
+        or_num_regions: int = 100,
+        or_base_seed: int = 0,
         score_mod: str | None = None,
         value_residual: bool = False,
         num_register_tokens: int | None = None,
@@ -160,6 +164,10 @@ class Encoder(nn.Module):
             attn_type: Type of attention to use.
             window_size: Window size for the sliding window.
             window_wrap: Whether to wrap the window by wrapping the input sequence or the mask, depending on the attn_type.
+            or_n_hashes: OR hash tables per head. None = feature off.
+            or_num_regions: Total number of (eta, phi) cells the detector is chopped into.
+            or_base_seed: Global seed offset. Every cell's random draw is base_seed + layer_idx*(num_heads*n_hashes) + head*n_hashes + hash
+                          so base_seed is the starting number of the sequence. 0 reproduces the benchmark.
             score_mod: Score modification function.
             value_residual: Add a residual connection from the initial layer values.
             num_register_tokens: Number of register tokens to add at the beginning of the sequence. If None, no register tokens are added.
@@ -171,6 +179,12 @@ class Encoder(nn.Module):
         assert not window_wrap or window_size, "Window size must be set if window wrap is True."
         assert attn_type != "flex" or score_mod is None, "Score mod is only supported with flex attention."
         assert not (num_register_tokens is not None and window_size is not None), "Register tokens are not compatible with window attention."
+        assert or_n_hashes is None or attn_type == "flex", "OR amplification requires flex attention."
+        assert or_n_hashes is None or window_size, "OR amplification requires a window_size to be set."
+        assert or_n_hashes is None or not window_wrap, (
+            "OR amplification has no wrapped variant: LSH ordering treats phi as a linear coordinate, so not periodic."
+        )
+
         layer_kwargs = layer_kwargs or {}
 
         self.num_layers = num_layers
@@ -178,6 +192,7 @@ class Encoder(nn.Module):
         self.attn_type = attn_type
         self.window_size = window_size
         self.window_wrap = window_wrap
+        self.or_n_hashes = or_n_hashes
         self.score_mod = SCORE_MODS[score_mod] if score_mod else None
         self.value_residual = value_residual
         self.num_register_tokens = num_register_tokens
@@ -196,30 +211,50 @@ class Encoder(nn.Module):
         attn_kwargs = layer_kwargs.get("attn_kwargs", None) or {}
         attn_kwargs["attn_type"] = attn_type
         layer_kwargs["value_residual"] = self.value_residual
-        attn_kwargs["window_size"] = window_size
+        # Only the flash kernels take a window as an argument; flex expresses its window
+        # in the mask_mod / BlockMask instead, and Attention rejects a window_size for it.
+        attn_kwargs["window_size"] = window_size if attn_type in FLASH_ATTN_TYPES else None
         layer_kwargs["attn_kwargs"] = attn_kwargs
 
         self.layers = torch.nn.ModuleList([EncoderLayer(dim=dim, depth=i, **layer_kwargs) for i in range(num_layers)])
+        # E2LSHOrderingGrid needs num_heads to size grid
+        # Read this off a constructed layer so attn_kwargs override is tracked automatically
+        num_heads = self.layers[0].attn.fn.num_heads
+        self.ordering_grids = None
+        if or_n_hashes is not None:
+            self.ordering_grids = torch.nn.ModuleList([
+                E2LSHOrderingGrid(num_heads, or_n_hashes, num_regions=or_num_regions, base_seed=or_base_seed, layer_idx=i) for i in range(num_layers)
+            ])
 
     def set_backend(self, attn_type: str):
         self.attn_type = attn_type
         for layer in self.layers:
             self.attn_type = layer.attn.fn.set_backend(self.attn_type)
 
-    def forward(self, x: Tensor, x_sort_value: Tensor | None = None, kv_mask: Tensor | None = None, **kwargs) -> Tensor:
+    def forward(
+        self, x: Tensor, x_sort_value: Tensor | None = None, kv_mask: Tensor | None = None, x_coords: Tensor | None = None, **kwargs
+    ) -> Tensor:
         batch_size = x.shape[0]
         seq_len = x.shape[-2]
+
+        # x_coords (B, N, 2) carries the per-hit (eta, phi)
+        assert self.ordering_grids is None or x_coords is not None, "OR amplification requires x_coords (B, N, 2) of (eta, phi)."
 
         # If value to sort on is provided, use it to sort the tokens
         # We don't need to use the stable sort assuming that the sort values are unique
         x_sort_idx = None
         if x_sort_value is not None:
             x_sort_idx = torch.argsort(x_sort_value, dim=-1)
-            x = torch.gather(x, dim=-2, index=x_sort_idx.unsqueeze(-1).expand_as(x))
+            x = torch.gather(x, dim=-2, index=x_sort_idx.unsqueeze(-1).expand_as(x))  # x is a stack of token vectors
 
             # Also permute the kv mask if we have one
             if kv_mask is not None:
                 kv_mask = torch.gather(kv_mask, dim=-1, index=x_sort_idx)
+
+            # The coords must follow their tokens, otherwise the rank tables built from
+            # them describe hits that are no longer at those positions
+            if x_coords is not None:
+                x_coords = torch.gather(x_coords, dim=-2, index=x_sort_idx.unsqueeze(-1).expand_as(x_coords))
 
         # Add register tokens at the beginning of the sequence
         if self.register_tokens is not None:
@@ -239,20 +274,21 @@ class Encoder(nn.Module):
         elif self.attn_type == "flash-varlen":
             raise ValueError("kv_mask must be provided for flash-varlen attention.")
 
-        # Initialise sliding window mask
-        if self.mask_mod is None and self.attn_type != "flash" and self.window_size:
-            self.seq_len = torch.tensor([1], device=x.device)
-            self.mask_mod = (
-                sliding_window_mask(self.window_size) if not self.window_wrap else sliding_window_mask_wrapped(self.window_size, self.seq_len)
-            )
-
-        # Handle masking
         attn_mask = None
-        if self.attn_type == "torch" and self.mask_mod:
-            attn_mask = create_mask(self.mask_mod, 1, 1, seq_len, seq_len, device=str(x.device))
-        elif self.attn_type == "flex" and self.mask_mod:
-            self.seq_len[0] = seq_len
-            attn_mask = create_block_mask(self.mask_mod, B=None, H=None, Q_LEN=seq_len, KV_LEN=seq_len, device=str(x.device))
+        if self.ordering_grids is None:
+            # Initialise sliding window mask
+            if self.mask_mod is None and self.attn_type != "flash" and self.window_size:
+                self.seq_len = torch.tensor([1], device=x.device)
+                self.mask_mod = (
+                    sliding_window_mask(self.window_size) if not self.window_wrap else sliding_window_mask_wrapped(self.window_size, self.seq_len)
+                )
+
+            # Handle masking
+            if self.attn_type == "torch" and self.mask_mod:
+                attn_mask = create_mask(self.mask_mod, 1, 1, seq_len, seq_len, device=str(x.device))
+            elif self.attn_type == "flex" and self.mask_mod:
+                self.seq_len[0] = seq_len
+                attn_mask = create_block_mask(self.mask_mod, B=None, H=None, Q_LEN=seq_len, KV_LEN=seq_len, device=str(x.device))
 
         # Add wrapping for flash attention with sliding window
         if self.attn_type == "flash" and self.window_wrap:
@@ -260,8 +296,27 @@ class Encoder(nn.Module):
 
         # Apply layers
         initial_values = {} if self.value_residual else None
-        for layer in self.layers:
-            x = layer(x, attn_mask=attn_mask, score_mod=self.score_mod, initial_values=initial_values, kv_mask=kv_mask, **kwargs)
+        for i, layer in enumerate(self.layers):
+            layer_mask = attn_mask
+            if self.ordering_grids is not None:
+                ranks = self.ordering_grids[i](x_coords[0]).flatten(0, 1)  # (num_heads * n_hashes, N)
+                layer_mask = create_block_mask(
+                    per_head_window_mask_mod(ranks, self.window_size),
+                    B=None,
+                    H=ranks.shape[0],
+                    Q_LEN=seq_len,
+                    KV_LEN=seq_len,
+                    device=str(x.device),
+                )
+            x = layer(
+                x,
+                attn_mask=layer_mask,
+                score_mod=self.score_mod,
+                initial_values=initial_values,
+                kv_mask=kv_mask,
+                or_n_hashes=self.or_n_hashes,
+                **kwargs,
+            )
 
         # Remove wrapping for flash attention with sliding window
         if self.attn_type == "flash" and self.window_wrap:
