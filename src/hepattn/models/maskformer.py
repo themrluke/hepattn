@@ -60,6 +60,11 @@ class MaskFormer(nn.Module):
         self.decoder.dynamic_query_source = dynamic_query_source
 
         assert not (input_sort_field and sorter), "Cannot specify both input_sort_field and sorter."
+        # The per-head mask is defined over token index, so hits only have useful neighbours once
+        # the sequence carries geometric locality. Unsorted, every mask comes out fully dense and
+        # OR amplification is a no-op that still pays for replicating q/k/v across the hashes.
+        or_sort_msg = "OR amplification needs a sorted sequence: set input_sort_field or a sorter, or the masks are dense and it does nothing."
+        assert self.encoder.or_n_hashes is None or input_sort_field or sorter, or_sort_msg
         self.input_sort_field = input_sort_field
         self.sorter = sorter
         if self.sorter is not None:
