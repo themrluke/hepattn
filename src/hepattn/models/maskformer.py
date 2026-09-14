@@ -117,6 +117,15 @@ class MaskFormer(nn.Module):
                 [inputs[input_name + "_" + self.input_sort_field] for input_name in self.input_names], dim=-1
             )
 
+        # OR amplification needs the hit coordinates, and they have to end up in the same order
+        # as the tokens. Adding them here, before the sorter, covers both cases: a sorter will
+        # permute them along with everything else, and without one they stay as they are and the
+        # encoder permutes them itself using x_sort_value. Two 1-D fields rather than a stacked
+        # (B, N, 2) tensor, because sort_inputs gathers with a (B, N) index that 3D would break.
+        if self.encoder.or_n_hashes is not None:
+            for field in ("eta", "phi"):
+                x[f"key_{field}"] = torch.concatenate([inputs[f"{name}_{field}"] for name in self.input_names], dim=-1)
+
         # Dedicated sorting step before encoder
         if self.sorter is not None:
             x[f"key_{self.sorter.input_sort_field}"] = torch.concatenate(
@@ -129,7 +138,9 @@ class MaskFormer(nn.Module):
 
         # Pass merged input constituents through the encoder
         x_sort_value = x.get(f"key_{self.input_sort_field}") if self.sorter is None else None
-        x["key_embed"] = self.encoder(x["key_embed"], x_sort_value=x_sort_value, kv_mask=x.get("key_valid"))
+        # (B, N) + (B, N) -> (B, N, 2), eta first: E2LSHOrderingGrid reads coords[..., 0] as eta.
+        x_coords = torch.stack([x["key_eta"], x["key_phi"]], dim=-1) if self.encoder.or_n_hashes is not None else None
+        x["key_embed"] = self.encoder(x["key_embed"], x_sort_value=x_sort_value, kv_mask=x.get("key_valid"), x_coords=x_coords)
 
         # Keep dynamic query initialization compatible with unified decoding by ensuring
         # source_embed/source_valid refer to *post-encoder* features.
