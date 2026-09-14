@@ -194,7 +194,7 @@ class Attention(nn.Module):
         num_heads: int = 8,
         bias: bool = True,
         attn_type: str = "torch",
-        torch_compile: bool = False,
+        torch_compile: bool | None = None,
         window_size: int | None = None,
         qkv_norm: bool = False,
         norm: str | None = None,
@@ -208,7 +208,10 @@ class Attention(nn.Module):
             num_heads: Number of attention heads.
             bias: Whether to use bias in linear projections.
             attn_type: Attention backend ('torch', 'flex', 'flash', 'flash-varlen').
-            torch_compile: Whether to compile the attention function.
+            torch_compile: Whether to compile the attention function. None (the default) decides per
+                backend: flex is compiled, everything else is not. Flex without compilation falls back
+                to materialising the whole N x N score matrix, which loses the block-sparsity saving
+                entirely and runs out of memory at realistic sequence lengths.
             window_size: Window size for sliding window attention (flash/flash-varlen only).
             qkv_norm: Whether to normalize Q, K, V after projection, before attention.
                 Recommended for cross-attention to prevent distribution mismatch between Q and K/V.
@@ -252,7 +255,8 @@ class Attention(nn.Module):
             self.k_norm = norm_cls(dim)
             self.v_norm = norm_cls(dim)
 
-        self.set_backend(attn_type, torch_compile=torch_compile, window_size=window_size)
+        self.torch_compile = torch_compile
+        self.set_backend(attn_type, window_size=window_size)
         self.reset_parameters()
 
         if window_size and not self.window_size:
@@ -265,8 +269,10 @@ class Attention(nn.Module):
             nn.init.constant_(self.in_proj_bias, 0.0)
         self.out_proj.reset_parameters()
 
-    def set_backend(self, attn_type: str, torch_compile: bool = False, window_size: int | None = None) -> str:
+    def set_backend(self, attn_type: str, torch_compile: bool | None = None, window_size: int | None = None) -> str:
         # Allow to change the attention backend after initialization, when evaluating the model
+        if torch_compile is not None:
+            self.torch_compile = torch_compile
 
         self.attn_type = attn_type
         if attn_type not in ATTN_TYPES:
@@ -277,7 +283,11 @@ class Attention(nn.Module):
         if attn_type in FLASH_ATTN_TYPES:
             # TODO: Will need to change when supporting window with flex
             self.window_size = (window_size // 2, window_size // 2) if window_size is not None else (-1, -1)
-        if torch_compile:
+        # Compile flex unless explicitly told not to: uncompiled it materialises the full N x N
+        # score matrix, so it is both slower and far heavier than the fused kernel (measured at
+        # N=4096, 24 mask rows: 44.5 ms / 8.5 GB uncompiled vs 11.2 ms / 0.11 GB compiled).
+        compile_attn = self.torch_compile if self.torch_compile is not None else self.attn_type == "flex"
+        if compile_attn:
             self.attn = torch.compile(self.attn, dynamic=True)
         return self.attn_type
 

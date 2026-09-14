@@ -11,6 +11,13 @@ one you meant to.
 import pytest
 
 from hepattn.models import Encoder
+from hepattn.models.attention import Attention
+
+
+def _is_compiled(attn: Attention) -> bool:
+    """torch.compile wraps the callable; the original is kept on _torchdynamo_orig_callable."""
+    return hasattr(attn.attn, "_torchdynamo_orig_callable")
+
 
 DIM = 32
 WINDOW = 64
@@ -54,3 +61,31 @@ def test_plain_encoder_still_switches_freely():
     for backend in ("flash", "flex", "torch"):
         encoder.set_backend(backend)
     assert encoder.attn_type == "torch"
+
+
+def test_flex_is_compiled_by_default_and_other_backends_are_not():
+    # flex without torch.compile falls back to materialising the whole N x N score matrix, which
+    # throws away the block-sparsity saving and OOMs at realistic N. Measured at N=4096 with 24
+    # mask rows: 44.5 ms / 8.5 GB uncompiled against 11.2 ms / 0.11 GB compiled.
+    assert _is_compiled(Attention(DIM, attn_type="flex"))
+    for backend in ("torch", "flash", "flash-varlen"):
+        assert not _is_compiled(Attention(DIM, attn_type=backend)), backend
+
+
+def test_explicit_torch_compile_still_wins():
+    assert not _is_compiled(Attention(DIM, attn_type="flex", torch_compile=False))
+    assert _is_compiled(Attention(DIM, attn_type="torch", torch_compile=True))
+
+
+def test_compilation_preference_survives_a_backend_switch():
+    # Same class of bug as the window: set_backend used to default the flag to False, so an
+    # explicitly compiled attention silently became uncompiled after switching.
+    attn = Attention(DIM, attn_type="torch", torch_compile=True)
+    attn.set_backend("torch")
+    assert _is_compiled(attn)
+
+    auto = Attention(DIM, attn_type="torch")
+    auto.set_backend("flex")
+    assert _is_compiled(auto)
+    auto.set_backend("torch")
+    assert not _is_compiled(auto)
