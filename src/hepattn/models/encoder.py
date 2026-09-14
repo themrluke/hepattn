@@ -227,9 +227,14 @@ class Encoder(nn.Module):
             ])
 
     def set_backend(self, attn_type: str):
+        # Route B lives entirely in the flex mask, so it cannot follow the model to another
+        # backend: forward would still build a BlockMask and hand it to a kernel that rejects it.
+        assert self.ordering_grids is None or attn_type == "flex", "OR amplification requires flex attention."
         self.attn_type = attn_type
         for layer in self.layers:
-            self.attn_type = layer.attn.fn.set_backend(self.attn_type)
+            # Forward the window too. Attention.set_backend defaults it to None, which resets the
+            # flash window to (-1, -1), so switching backends at eval time would silently drop it.
+            self.attn_type = layer.attn.fn.set_backend(self.attn_type, window_size=self.window_size)
 
     def forward(
         self, x: Tensor, x_sort_value: Tensor | None = None, kv_mask: Tensor | None = None, x_coords: Tensor | None = None, **kwargs
