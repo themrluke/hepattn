@@ -110,7 +110,10 @@ def or_merge_lse(out: Tensor, lse: Tensor, n_hashes: int) -> Tensor:
     h = out.shape[1] // n_hashes
     out = out.unflatten(1, (h, n_hashes))  # (B, H, C, N, Dh)
     weights = torch.softmax(lse.unflatten(1, (h, n_hashes)), dim=2)  # (B, H, C, N) over C
-    return (out * weights.unsqueeze(-1)).sum(dim=2)
+    # flex returns lse in float32 whatever the input dtype, so the product promotes. Accumulate in
+    # that wider dtype (it is the numerically better place to sum) but hand back the dtype the rest
+    # of the layer uses, or out_proj sees float32 activations against half weights.
+    return (out * weights.unsqueeze(-1)).sum(dim=2).to(out.dtype)
 
 
 def unpad_for_flash_varlen(x: Tensor, kv_mask: Tensor) -> tuple[Tensor, Tensor, dict]:

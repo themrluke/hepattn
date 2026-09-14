@@ -102,3 +102,17 @@ def test_lse_merge_multi_head_batch_shapes():
     sl = slice(head * c, (head + 1) * c)
     single = or_merge_lse(out[:, sl], lse[:, sl], c)
     assert torch.allclose(single[:, 0], merged[:, head], atol=1e-6)
+
+
+def test_merge_returns_the_input_dtype():
+    # flex_attention returns lse in float32 whatever the inputs are, so the weighted sum promotes.
+    # Left alone that hands float32 activations to a half-precision out_proj and the layer dies
+    # with "mat1 and mat2 must have the same dtype" -- invisible in float32 tests, fatal in the
+    # half precision that training and benchmarking actually use.
+    b, h, n, d, c = 1, 2, 8, 4, 3
+    out = torch.randn(b, h * c, n, d, dtype=torch.float16)
+    lse = torch.randn(b, h * c, n, dtype=torch.float32)
+
+    merged = or_merge_lse(out, lse, c)
+    assert merged.dtype == torch.float16, merged.dtype
+    assert merged.shape == (b, h, n, d)
