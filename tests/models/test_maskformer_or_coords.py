@@ -186,3 +186,16 @@ def test_coords_are_not_built_when_the_feature_is_off(sample_inputs):
 
     seen = _run(model, sample_inputs)
     assert seen["x_coords"] is None, "coords were built for a model that does not use them"
+
+
+def test_or_amplification_requires_a_sorted_sequence():
+    # The per-head mask is defined over token index, so without a sort the sequence carries no
+    # geometric locality, every mask comes out fully dense, and OR amplification does nothing --
+    # while still paying to replicate q/k/v across the hashes. Refuse that configuration rather
+    # than let it train as a silent no-op.
+    with pytest.raises(AssertionError, match="sorted sequence"):
+        _build_model(sorter=None, input_sort_field=None)
+
+    # Either way of supplying an order is fine.
+    _build_model(sorter=None, input_sort_field="phi")
+    _build_model(sorter=Sorter(input_sort_field="phi"), input_sort_field=None)
