@@ -286,7 +286,10 @@ class Attention(nn.Module):
         # Compile flex unless explicitly told not to: uncompiled it materialises the full N x N
         # score matrix, so it is both slower and far heavier than the fused kernel (measured at
         # N=4096, 24 mask rows: 44.5 ms / 8.5 GB uncompiled vs 11.2 ms / 0.11 GB compiled).
-        compile_attn = self.torch_compile if self.torch_compile is not None else self.attn_type == "flex"
+        # Not on CPU, though: inductor cannot lower flex with return_lse there, which the OR path
+        # needs, so auto-compiling would break CPU-only runs and tests. An explicit True still wins.
+        auto_compile = self.attn_type == "flex" and torch.cuda.is_available()
+        compile_attn = self.torch_compile if self.torch_compile is not None else auto_compile
         if compile_attn:
             self.attn = torch.compile(self.attn, dynamic=True)
         return self.attn_type
