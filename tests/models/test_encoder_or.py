@@ -11,6 +11,7 @@ Runs on CPU (flex attention has a CPU path), so it is not marked ``gpu`` and the
 does run in CI. It is slow: nearly all the wall time is ``torch.compile`` warm-up.
 """
 
+import pytest
 import torch
 from torch import Tensor, nn
 
@@ -160,16 +161,19 @@ def test_head_major_layout_pairs_each_head_with_its_own_ranks():
     assert differs, "every head matched the plain window; the shuffled orderings had no effect"
 
 
-def test_real_grids_build_one_distinct_mask_per_layer():
-    # Smoke test with the real E2LSHOrderingGrid rather than a stub: the wiring must
-    # survive real coordinates, and each layer must build its *own* BlockMask (the whole
-    # point of one grid per layer). `x_sort_value` is supplied because a sliding window
-    # over token index is only meaningful once the sequence carries geometric locality --
-    # unsorted, the mask comes out fully dense and the feature does nothing.
+def test_masked_impl_builds_one_distinct_mask_per_layer():
+    # Pinned to or_impl="masked": building a mask per layer is that implementation's defining
+    # behaviour, and the reason it is ~12x more expensive. The sorted default shares one
+    # position-only mask across every layer and cell, so these assertions do not apply to it.
+    #
+    # Otherwise a smoke test with the real E2LSHOrderingGrid rather than a stub: the wiring must
+    # survive real coordinates. `x_sort_value` is supplied because a sliding window over token
+    # index is only meaningful once the sequence carries geometric locality -- unsorted, the mask
+    # comes out fully dense and the feature does nothing.
     torch.manual_seed(0)
     num_layers, n_hashes = 3, 3
 
-    encoder = Encoder(num_layers=num_layers, dim=DIM, attn_type="flex", window_size=WINDOW, or_n_hashes=n_hashes).eval()
+    encoder = Encoder(num_layers=num_layers, dim=DIM, attn_type="flex", window_size=WINDOW, or_n_hashes=n_hashes, or_impl="masked").eval()
     num_heads = encoder.layers[0].attn.fn.num_heads
 
     x = torch.randn(1, SEQ_LEN, DIM)
@@ -209,3 +213,60 @@ def test_real_grids_build_one_distinct_mask_per_layer():
     assert not any(torch.equal(ranks[0], other) for other in ranks[1:]), (
         "layers produced identical rank tables; the per-layer grids are not independent"
     )
+
+
+def test_sorted_and_masked_implementations_agree():
+    """The two OR implementations must be interchangeable, not merely similar.
+
+    They admit exactly the same query/key pairs -- "within W//2 of each other in this cell's
+    ordering" -- so they compute the same attention by two routes: one permutes the tokens into
+    that ordering and applies a plain banded window, the other leaves them alone and encodes the
+    ordering in the mask. Any disagreement is a bug.
+
+    This is the test that makes the choice of default safe: `sorted` is the one that runs, and
+    `masked` is the reference it is checked against.
+    """
+    torch.manual_seed(0)
+    n_hashes = 3
+
+    sorted_enc = Encoder(num_layers=2, dim=DIM, attn_type="flex", window_size=WINDOW, or_n_hashes=n_hashes, or_impl="sorted")
+    masked_enc = Encoder(num_layers=2, dim=DIM, attn_type="flex", window_size=WINDOW, or_n_hashes=n_hashes, or_impl="masked")
+
+    missing, unexpected = masked_enc.load_state_dict(sorted_enc.state_dict(), strict=False)
+    assert not missing, f"masked encoder is missing weights: {missing}"
+    assert not unexpected, f"unexpected keys: {unexpected}"
+
+    sorted_enc.eval()
+    masked_enc.eval()
+    x = torch.randn(1, SEQ_LEN, DIM)
+    coords = torch.randn(1, SEQ_LEN, 2)
+
+    with torch.no_grad():
+        got = sorted_enc(x, x_sort_value=coords[..., 1], x_coords=coords)
+        expected = masked_enc(x, x_sort_value=coords[..., 1], x_coords=coords)
+
+    torch.testing.assert_close(got, expected, rtol=1e-4, atol=1e-5)
+
+
+def test_sorted_is_the_default_and_keeps_the_shared_mask_cache():
+    # The default matters: sorted is ~12x cheaper end to end. It is also the only OR path that can
+    # use the encoder's position-only mask cache, which is where most of that saving comes from --
+    # masked must rebuild a taller mask every layer of every event.
+    default_enc = Encoder(num_layers=1, dim=DIM, attn_type="flex", window_size=WINDOW, or_n_hashes=1)
+    assert default_enc.or_impl == "sorted"
+
+    x = torch.randn(1, SEQ_LEN, DIM)
+    coords = torch.randn(1, SEQ_LEN, 2)
+    with torch.no_grad():
+        default_enc(x, x_sort_value=coords[..., 1], x_coords=coords)
+    assert default_enc.mask_mod is not None, "sorted should populate the shared banded mask cache"
+
+    masked_enc = Encoder(num_layers=1, dim=DIM, attn_type="flex", window_size=WINDOW, or_n_hashes=1, or_impl="masked")
+    with torch.no_grad():
+        masked_enc(x, x_sort_value=coords[..., 1], x_coords=coords)
+    assert masked_enc.mask_mod is None, "masked must not use the shared cache"
+
+
+def test_unknown_or_impl_is_rejected():
+    with pytest.raises(AssertionError, match="or_impl"):
+        Encoder(num_layers=1, dim=DIM, attn_type="flex", window_size=WINDOW, or_n_hashes=1, or_impl="banana")

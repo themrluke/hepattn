@@ -96,6 +96,53 @@ def expand_heads_for_or(x: Tensor, n_hashes: int) -> Tensor:
     return x.unsqueeze(2).expand(b, h, n_hashes, n, d).reshape(b, h * n_hashes, n, d)
 
 
+def permute_to_rank_order(x: Tensor, ranks: Tensor, n_hashes: int) -> Tensor:
+    """Gather each cell's tokens into that cell's own ordering.
+
+    ``(B, H, N, Dh) -> (B, H * n_hashes, N, Dh)``, head-major like
+    :func:`expand_heads_for_or`, but with row ``h`` additionally permuted so that position
+    ``p`` holds whichever token stands at rank ``p`` under cell ``h``.
+
+    This is the "sorted" implementation of OR amplification. Once every cell's tokens are in
+    its own order, the per-head rank window collapses into an ordinary *banded* window over
+    position, so all cells can share one position-only ``BlockMask`` instead of each needing
+    its own. That is what makes it ~12x cheaper than masking in place: the shared mask is both
+    ~19x cheaper to build and reusable across layers and events, whereas a per-head rank mask
+    has to be rebuilt for every layer of every event (see notes, benchmark_or_amplification).
+
+    Args:
+        x: ``(B, H, N, Dh)`` projected queries, keys or values.
+        ranks: ``(H * n_hashes, N)`` rank tables; ``ranks[h, t]`` is token ``t``'s position.
+        n_hashes: OR hash tables per head.
+
+    Returns:
+        ``(B, H * n_hashes, N, Dh)``, each row in its own cell's order.
+    """
+    b, _, _, head_dim = x.shape
+    # ranks is token -> position; argsort inverts it to position -> token, the gather index.
+    order = torch.argsort(ranks, dim=-1)
+    head_of_cell = torch.arange(ranks.shape[0], device=x.device) // n_hashes
+    replicated = x[:, head_of_cell]
+    return torch.gather(replicated, 2, order[None, :, :, None].expand(b, -1, -1, head_dim))
+
+
+def restore_token_order(x: Tensor, ranks: Tensor) -> Tensor:
+    """Undo :func:`permute_to_rank_order`, for outputs or their log-sum-exps.
+
+    No scatter needed: ``ranks`` is already the inverse permutation, so gathering *with* it
+    puts every token back where it started.
+
+    Args:
+        x: ``(B, H * n_hashes, N, Dh)`` outputs or ``(B, H * n_hashes, N)`` log-sum-exps.
+        ranks: ``(H * n_hashes, N)`` rank tables used for the forward permutation.
+
+    Returns:
+        ``x`` with the token axis back in the encoder's order.
+    """
+    index = ranks[None, :, :, None].expand(x.shape[0], -1, -1, x.shape[-1]) if x.ndim == 4 else ranks[None].expand(x.shape[0], -1, -1)
+    return torch.gather(x, 2, index)
+
+
 def or_merge_lse(out: Tensor, lse: Tensor, n_hashes: int) -> Tensor:
     """Merge ``n_hashes`` OR-ordering attention outputs by log-sum-exp weights.
 
@@ -367,6 +414,7 @@ class Attention(nn.Module):
         score_mod: _score_mod_signature | None = None,
         initial_values: dict | None = None,
         or_n_hashes: int | None = None,
+        or_ranks: Tensor | None = None,
         **kwargs,
     ) -> Tensor:
         """Multi-head attention forward pass.
@@ -399,11 +447,20 @@ class Attention(nn.Module):
         initial_values : dict, optional
             Initial values for value residual connection.
         or_n_hashes : int, optional
-            Number of OR hash tables per head for per-head LSH ordering (Route B). When
-            set (flex only), q/k/v are replicated across the hash axis, ``attn_mask``
-            must be a BlockMask of height ``num_heads * or_n_hashes``, and the per-hash
-            outputs are log-sum-exp merged back to ``num_heads`` heads. If None, standard
-            single-ordering attention is used.
+            Number of OR hash tables per head for per-head LSH ordering. When set (flex
+            only), q/k/v are expanded across the hash axis and the per-hash outputs are
+            log-sum-exp merged back to ``num_heads`` heads. If None, standard
+            single-ordering attention is used. What ``attn_mask`` must be depends on
+            ``or_ranks``.
+        or_ranks : Tensor, optional
+            ``(num_heads * or_n_hashes, N)`` rank tables, selecting the *sorted*
+            implementation: each cell's q/k/v are gathered into its own ordering, so
+            ``attn_mask`` is one ordinary position-only banded BlockMask shared by every
+            cell (build it with ``H=None``; flex broadcasts it). Outputs are un-permuted
+            before the merge. This is the default and is ~12x cheaper end to end.
+            When None, the *masked* implementation is used instead: nothing moves and
+            ``attn_mask`` must be a BlockMask of height ``num_heads * or_n_hashes``
+            carrying each cell's rank window. Both compute identical results.
         **kwargs : dict
             Additional keyword arguments. For flash-varlen attention, must include:
             - varlen_kwargs: dict containing cu_seqlens and max_seqlen
@@ -454,10 +511,19 @@ class Attention(nn.Module):
             if attn_mask is not None:
                 assert q.shape[0] == 1, "Flex attention with block_mask currently only supports batch size of 1."
             # TODO: Should block_mask be an argument separate from attn_mask to simplify things?
-            if or_n_hashes is not None:
-                # Per-head OR-of-orderings (Route B): replicate heads across the hash axis,
-                # run one flex call whose BlockMask height is num_heads * or_n_hashes, then
-                # log-sum-exp merge the hash axis back down to num_heads.
+            if or_n_hashes is not None and or_ranks is not None:
+                # Sorted OR-of-orderings (the default). Gather each cell's tokens into its own
+                # ordering, so the per-head rank window becomes an ordinary banded window over
+                # position and every cell can share one position-only BlockMask. Un-permute the
+                # outputs and their lse before merging, so the merge sees token order.
+                q, k, v = (permute_to_rank_order(t, or_ranks, or_n_hashes) for t in (q, k, v))
+                out, lse = self.attn(q, k, v, block_mask=attn_mask, score_mod=score_mod, return_lse=True)
+                out = or_merge_lse(restore_token_order(out, or_ranks), restore_token_order(lse, or_ranks), or_n_hashes)
+            elif or_n_hashes is not None:
+                # Masked OR-of-orderings. Nothing moves; each cell's window is expressed as a
+                # constraint on its ranks inside attn_mask, whose height is num_heads * n_hashes.
+                # Kept as the reference implementation and for benchmarking -- it is ~12x more
+                # expensive end to end, almost all of it rebuilding that mask per layer per event.
                 q, k, v = (expand_heads_for_or(t, or_n_hashes) for t in (q, k, v))
                 out, lse = self.attn(q, k, v, block_mask=attn_mask, score_mod=score_mod, return_lse=True)
                 out = or_merge_lse(out, lse, or_n_hashes)
