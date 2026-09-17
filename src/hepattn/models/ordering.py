@@ -64,7 +64,7 @@ def draw_lsh_table(rng: np.random.Generator, num_regions: int = 100, num_axes: i
     return alpha, region_counts
 
 
-def lsh_order_values(coords: Tensor, alpha: Tensor, region_counts: Tensor) -> Tensor:
+def lsh_order_values(coords: Tensor, alpha: Tensor, region_counts: Tensor, valid: Tensor | None = None) -> Tensor:
     """HEPT E2LSH ordering values for a grid of hash tables.
 
     Args:
@@ -72,9 +72,27 @@ def lsh_order_values(coords: Tensor, alpha: Tensor, region_counts: Tensor) -> Te
             allowed and broadcast through.
         alpha: ``(G, 2)`` frozen Gaussian projections (``G`` tables).
         region_counts: ``(G, 2)`` frozen ``[eta_count, phi_count]`` per table.
+        valid: ``(..., N)`` bool, False for padded slots. Padded tokens are given an
+            ordering value of ``+inf`` so they sort to the tail of every table, and they
+            are excluded from the statistics the ordering is built from. Both matter --
+            see below. None means every token is real.
 
     Returns:
         ``(..., G, N)`` ordering values ``o``. ``argsort(o, dim=-1)`` is the ordering.
+
+    Padding is handled in two places, and leaving out either one silently corrupts the
+    ordering of the *real* tokens:
+
+    * ``span`` and the quantile ranks are computed over valid tokens only. Both are
+      statistics of the event: ``span`` is a max minus a min, and the quantile bins are
+      equal-occupancy. A padded coordinate (typically 0, or whatever the collate left
+      behind) shifts them, which changes where the bin edges fall and therefore reorders
+      genuine hits. Nothing about that failure is visible downstream.
+    * Padded tokens are then pushed to ``+inf`` so they occupy the last slots of every
+      table. That keeps them from being interleaved among real tokens, where they would
+      eat window capacity from every real query. It does **not** stop them being attended
+      -- real tokens holding the highest ranks are still within half a window of them --
+      so the mask still needs an explicit validity term.
 
     All arithmetic runs in ``alpha.dtype`` (use float64 to match the numpy
     benchmark exactly; float32 is fine for the model). The two O(N log N) coordinate
@@ -90,18 +108,43 @@ def lsh_order_values(coords: Tensor, alpha: Tensor, region_counts: Tensor) -> Te
     eta, phi = coords[..., 0], coords[..., 1]  # (..., N)
     eta_count, phi_count = region_counts[:, 0], region_counts[:, 1]  # (G,)
 
+    # Every statistic below is a property of the *event*, so padded slots must not feed any of
+    # them. Pushing their eta/phi to +inf keeps them out of the quantile ranks (they sort past
+    # every real token); the projection needs masking separately, below, because its padded
+    # entries are finite. num_valid stays a tensor so this never syncs the GPU back to the host.
+    if valid is None:
+        eta_used, phi_used, num_valid = eta, phi, n
+    else:
+        pad = ~valid
+        eta_used = eta.masked_fill(pad, float("inf"))
+        phi_used = phi.masked_fill(pad, float("inf"))
+        num_valid = valid.sum(dim=-1)
+        # Padded coordinates are whatever the collate left behind, so neutralise them before the
+        # projection rather than trusting them to be finite.
+        coords = coords.masked_fill(pad.unsqueeze(-1), 0.0)
+
     # E2LSH projection alpha.(eta, phi) per table, and its span D.
     hashed = torch.einsum("...nd,gd->...gn", coords, alpha)  # (..., G, N)
-    span = (hashed.amax(dim=-1) - hashed.amin(dim=-1)).clamp_min(_EPS).unsqueeze(-1)  # (..., G, 1)
+    if valid is None:
+        span = hashed.amax(dim=-1) - hashed.amin(dim=-1)
+    else:
+        keep = valid.unsqueeze(-2)  # (..., 1, N), broadcast over the G tables
+        span = hashed.masked_fill(~keep, float("-inf")).amax(dim=-1) - hashed.masked_fill(~keep, float("inf")).amin(dim=-1)
+    span = span.clamp_min(_EPS).unsqueeze(-1)  # (..., G, 1)
 
     # Equal-occupancy quantile-bin index (1-based) per axis; the argsort-of-argsort
-    # rank is data-only, so compute it once and broadcast the per-table bin size.
-    eta_rank = _rank(eta).unsqueeze(-2)  # (..., 1, N)
-    phi_rank = _rank(phi).unsqueeze(-2)
-    region_eta = torch.div(eta_rank, torch.ceil(n / eta_count).view(-1, 1), rounding_mode="floor") + 1  # (..., G, N)
-    region_phi = torch.div(phi_rank, torch.ceil(n / phi_count).view(-1, 1), rounding_mode="floor") + 1
+    # rank is data-only, so compute it once and broadcast the per-table bin size. The bin
+    # width divides the number of *real* tokens, so the bins stay equal-occupancy over them.
+    eta_rank = _rank(eta_used).unsqueeze(-2)  # (..., 1, N)
+    phi_rank = _rank(phi_used).unsqueeze(-2)
+    region_eta = torch.div(eta_rank, torch.ceil(num_valid / eta_count).view(-1, 1), rounding_mode="floor") + 1  # (..., G, N)
+    region_phi = torch.div(phi_rank, torch.ceil(num_valid / phi_count).view(-1, 1), rounding_mode="floor") + 1
 
-    return hashed + region_eta * span + region_phi * span * (torch.ceil(eta_count) + 1).view(-1, 1)
+    order_values = hashed + region_eta * span + region_phi * span * (torch.ceil(eta_count) + 1).view(-1, 1)
+    if valid is not None:
+        # Finally send the padded tokens themselves to the tail of every ordering.
+        order_values = order_values.masked_fill(~valid.unsqueeze(-2), float("inf"))
+    return order_values
 
 
 def _rank(v: Tensor) -> Tensor:
@@ -158,18 +201,26 @@ class E2LSHOrderingGrid(nn.Module):
         self.register_buffer("alpha", torch.as_tensor(alpha, dtype=dtype))
         self.register_buffer("region_counts", torch.as_tensor(region_counts, dtype=dtype))
 
-    def forward(self, coords: Tensor) -> Tensor:
+    def forward(self, coords: Tensor, valid: Tensor | None = None) -> Tensor:
         """Rank tables for the grid.
 
         Args:
             coords: ``(..., N, 2)`` per-hit ``(eta, phi)``.
+            valid: ``(..., N)`` bool, False for padded slots. Padded tokens take the last
+                ranks of *every* cell and are kept out of the statistics the ordering is
+                built from -- see :func:`lsh_order_values`. None means all tokens are real.
 
         Returns:
             ``(..., num_heads, n_hashes, N)`` int64 ``rank`` tables: entry ``[.., head,
             hash, t]`` is the position of token ``t`` in that cell's ordering.
+
+        Note that because padded tokens sort to the tail of every cell, they occupy the
+        *same* trailing block of positions in all of them. That is what lets the sorted
+        OR implementation express "do not attend padding" as ``position < num_valid`` in
+        a single mask shared by every cell.
         """
         alpha = self.alpha.flatten(0, 1)  # (G, 2)
         region_counts = self.region_counts.flatten(0, 1)  # (G, 2)
-        o = lsh_order_values(coords, alpha, region_counts)  # (..., G, N)
+        o = lsh_order_values(coords, alpha, region_counts, valid=valid)  # (..., G, N)
         ranks = torch.argsort(torch.argsort(o, dim=-1, stable=True), dim=-1, stable=True)  # (..., G, N)
         return ranks.unflatten(-2, (self.num_heads, self.n_hashes))

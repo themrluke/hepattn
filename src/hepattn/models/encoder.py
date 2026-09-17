@@ -4,7 +4,7 @@ import torch
 from torch import Tensor, nn
 from torch.nn.attention.flex_attention import create_block_mask, create_mask
 
-from hepattn.flex import per_head_window_mask_mod, relative_position, relative_position_wrapped
+from hepattn.flex import per_head_window_mask_mod, relative_position, relative_position_wrapped, sorted_window_mask_mod
 from hepattn.flex.sliding_window import sliding_window_mask, sliding_window_mask_wrapped
 from hepattn.models.attention import FLASH_ATTN_TYPES, Attention, repad_from_flash_varlen, unpad_for_flash_varlen
 from hepattn.models.dense import Dense
@@ -217,6 +217,9 @@ class Encoder(nn.Module):
         # handle masking
         self.mask_mod = None
         self.seq_len = None
+        # Both are written in place every forward so the cached mask_mod closes over a live
+        # view rather than one event's values. num_valid is only read by the sorted OR path.
+        self.num_valid = None
 
         # handle attention
         attn_kwargs = layer_kwargs.get("attn_kwargs", None) or {}
@@ -238,7 +241,7 @@ class Encoder(nn.Module):
             ])
 
     def set_backend(self, attn_type: str):
-        # Route B lives entirely in the flex mask, so it cannot follow the model to another
+        # OR amplification lives entirely in the flex mask, so it cannot follow the model to another
         # backend: forward would still build a BlockMask and hand it to a kernel that rejects it.
         assert self.ordering_grids is None or attn_type == "flex", "OR amplification requires flex attention."
         self.attn_type = attn_type
@@ -299,15 +302,26 @@ class Encoder(nn.Module):
             # Initialise sliding window mask
             if self.mask_mod is None and self.attn_type != "flash" and self.window_size:
                 self.seq_len = torch.tensor([1], device=x.device)
-                self.mask_mod = (
-                    sliding_window_mask(self.window_size) if not self.window_wrap else sliding_window_mask_wrapped(self.window_size, self.seq_len)
-                )
+                self.num_valid = torch.tensor([1], device=x.device)
+                if self.ordering_grids is not None:
+                    # Sorted OR path: a plain banded window over position, plus a validity cut.
+                    # Padded slots take the last ranks of every ordering, so after the permutation
+                    # they occupy the same trailing block of positions in every cell -- which is
+                    # what lets one shared mask express "not padding" as `position < num_valid`.
+                    self.mask_mod = sorted_window_mask_mod(self.window_size, num_valid=self.num_valid)
+                elif self.window_wrap:
+                    self.mask_mod = sliding_window_mask_wrapped(self.window_size, self.seq_len)
+                else:
+                    self.mask_mod = sliding_window_mask(self.window_size)
 
             # Handle masking
             if self.attn_type == "torch" and self.mask_mod:
                 attn_mask = create_mask(self.mask_mod, 1, 1, seq_len, seq_len, device=str(x.device))
             elif self.attn_type == "flex" and self.mask_mod:
+                # Written in place, not rebound: the cached mask_mod holds this exact tensor, so
+                # assigning a new one would leave it reading the first event's values forever.
                 self.seq_len[0] = seq_len
+                self.num_valid[0] = seq_len if kv_mask is None else kv_mask[0].sum()
                 attn_mask = create_block_mask(self.mask_mod, B=None, H=None, Q_LEN=seq_len, KV_LEN=seq_len, device=str(x.device))
 
         # Add wrapping for flash attention with sliding window
@@ -316,32 +330,40 @@ class Encoder(nn.Module):
 
         # Apply layers
         initial_values = {} if self.value_residual else None
+        or_valid = None if kv_mask is None else kv_mask[0]
         for i, layer in enumerate(self.layers):
             layer_mask = attn_mask
-            ranks = None
+            # Only the sorted path hands the ranks to Attention; the masked path puts them in the
+            # mask instead, and passing None is what selects it there.
+            layer_ranks = None
             if self.ordering_grids is not None:
-                ranks = self.ordering_grids[i](x_coords[0]).flatten(0, 1)  # (num_heads * n_hashes, N)
-                if self.or_impl == "masked":
+                ranks = self.ordering_grids[i](x_coords[0], valid=or_valid).flatten(0, 1)
+                if self.or_impl == "sorted":
+                    layer_ranks = ranks
+                else:
                     # Tokens stay put, so every cell needs its own rank window: a mask of height
                     # num_heads * n_hashes, rebuilt here because the rule depends on this event's
                     # ranks and this layer's orderings. That rebuild is the bulk of its cost.
                     layer_mask = create_block_mask(
-                        per_head_window_mask_mod(ranks, self.window_size),
+                        per_head_window_mask_mod(ranks, self.window_size, kv_valid=or_valid),
                         B=None,
                         H=ranks.shape[0],
                         Q_LEN=seq_len,
                         KV_LEN=seq_len,
                         device=str(x.device),
                     )
-                    ranks = None  # signals the masked path to Attention.forward
             x = layer(
                 x,
                 attn_mask=layer_mask,
                 score_mod=self.score_mod,
                 initial_values=initial_values,
-                kv_mask=kv_mask,
+                # The OR paths have already folded validity into the BlockMask -- padded slots
+                # are pushed to the tail of every ordering and cut out by the mask_mod -- so the
+                # attention layer must not be handed the kv_mask as well. It has no way to use it
+                # on the flex backend anyway.
+                kv_mask=None if self.ordering_grids is not None else kv_mask,
                 or_n_hashes=self.or_n_hashes,
-                or_ranks=ranks,
+                or_ranks=layer_ranks,
                 **kwargs,
             )
 
