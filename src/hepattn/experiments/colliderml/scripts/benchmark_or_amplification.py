@@ -7,7 +7,7 @@ The three arms:
 
 * ``flash``  -- today's encoder: one global ordering, one sliding window, fused flash kernel.
   The cheapest, and the thing OR amplification has to justify itself against.
-* ``route_b`` -- leave the tokens where they are and express each head's window as a constraint
+* ``masked`` -- leave the tokens where they are and express each head's window as a constraint
   on that head's LSH *rank* (``|rank[h,q] - rank[h,kv]| <= W//2``), via a flex ``mask_mod``.
   Nothing moves, but the admitted pairs are scattered across the score matrix, so flex has to
   compute far more 128x128 tiles than a banded mask would.
@@ -16,12 +16,12 @@ The three arms:
   Every head's admitted pairs sit tight against the diagonal, so the tile count collapses --
   at the price of materialising the permuted tensors and a gather/scatter per head.
 
-``route_b`` and ``sorted`` admit **exactly the same pairs** and must therefore produce the same
+``masked`` and ``sorted`` admit **exactly the same pairs** and must therefore produce the same
 numbers; the script asserts that rather than assuming it. Any difference is a bug, not a result.
 
 Projections, norms and the residual stream are identical across the arms, so only the attention
 operation itself is timed. Mask construction is reported separately because it is not comparable:
-route_b rebuilds a mask per layer per event (its rule depends on the event's geometry) whereas
+masked rebuilds a mask per layer per event (its rule depends on the event's geometry) whereas
 the banded mask a sorted run needs is position-only and can be built once for the whole job.
 
 Usage:
@@ -74,7 +74,7 @@ def sort_by_lsh(coords: torch.Tensor) -> torch.Tensor:
     return coords[torch.argsort(order_values[0], stable=True)]
 
 
-def run_route_b(q, k, v, mask, n_hashes):
+def run_masked(q, k, v, mask, n_hashes):
     qe, ke, ve = (expand_heads_for_or(t, n_hashes) for t in (q, k, v))
     out, lse = compiled_flex(qe, ke, ve, block_mask=mask, return_lse=True)
     return or_merge_lse(out, lse, n_hashes)
@@ -132,25 +132,25 @@ def report_event(coords: torch.Tensor, args: argparse.Namespace, device: str) ->
         lambda: compiled_block_mask(sliding_window_mask(args.window_size), B=None, H=None, Q_LEN=num_tokens, KV_LEN=num_tokens, device=device),
         args.repeats,
     )
-    route_b_mask = compiled_block_mask(
+    masked_mask = compiled_block_mask(
         per_head_window_mask_mod(ranks, args.window_size), B=None, H=ranks.shape[0], Q_LEN=num_tokens, KV_LEN=num_tokens, device=device
     )
     banded_mask = compiled_block_mask(sliding_window_mask(args.window_size), B=None, H=None, Q_LEN=num_tokens, KV_LEN=num_tokens, device=device)
 
     with torch.no_grad():
-        out_b = run_route_b(q, k, v, route_b_mask, args.n_hashes)
+        out_b = run_masked(q, k, v, masked_mask, args.n_hashes)
         out_s = run_sorted(q, k, v, banded_mask, ranks, args.n_hashes)
         # The two admit identical pairs, so this is an equality check, not a tolerance study.
         torch.testing.assert_close(out_b, out_s, rtol=2e-3, atol=2e-3)
 
         results = {
-            "route_b_ms": timed(lambda: run_route_b(q, k, v, route_b_mask, args.n_hashes), args.repeats),
+            "masked_ms": timed(lambda: run_masked(q, k, v, masked_mask, args.n_hashes), args.repeats),
             "sorted_ms": timed(lambda: run_sorted(q, k, v, banded_mask, ranks, args.n_hashes), args.repeats),
-            "route_b_gb": peak_gb(lambda: run_route_b(q, k, v, route_b_mask, args.n_hashes)),
+            "masked_gb": peak_gb(lambda: run_masked(q, k, v, masked_mask, args.n_hashes)),
             "sorted_gb": peak_gb(lambda: run_sorted(q, k, v, banded_mask, ranks, args.n_hashes)),
-            "mask_route_b_ms": mask_ms,
+            "mask_masked_ms": mask_ms,
             "mask_banded_ms": banded_ms,
-            "route_b_density": 1.0 - route_b_mask.sparsity() / 100.0,
+            "masked_density": 1.0 - masked_mask.sparsity() / 100.0,
             "banded_density": 1.0 - banded_mask.sparsity() / 100.0,
         }
         if flash_attn_func is not None:
@@ -158,25 +158,25 @@ def report_event(coords: torch.Tensor, args: argparse.Namespace, device: str) ->
             results["flash_gb"] = peak_gb(lambda: run_flash(q, k, v, half_window))
 
     print(f"\n  N = {num_tokens}  window = {args.window_size}  heads = {args.num_heads}  hashes = {args.n_hashes}")
-    print(f"  block density      route_b {results['route_b_density']:.3f}   banded {results['banded_density']:.3f}")
+    print(f"  block density      masked {results['masked_density']:.3f}   banded {results['banded_density']:.3f}")
     print(f"  {'arm':<10}{'attn ms':>10}{'peak GB':>10}{'vs flash':>10}")
     base = results.get("flash_ms")
-    for arm in ("flash", "route_b", "sorted"):
+    for arm in ("flash", "masked", "sorted"):
         if f"{arm}_ms" not in results:
             continue
         ms, gb = results[f"{arm}_ms"], results[f"{arm}_gb"]
         rel = f"{ms / base:.1f}x" if base else "-"
         print(f"  {arm:<10}{ms:>10.2f}{gb:>10.3f}{rel:>10}")
-    # This is the number that decides the design, and it is easy to miss: route_b's rule closes
+    # This is the number that decides the design, and it is easy to miss: masked's rule closes
     # over the event's ranks and each layer draws its own, so its mask is rebuilt every layer of
     # every event. The sorted arm's window is position-only -- same mask for every head and every
     # layer, and reusable across events of equal length.
-    print(f"  mask build   route_b {mask_ms:7.2f} ms/layer/event   banded {banded_ms:7.2f} ms (shared, cacheable)")
+    print(f"  mask build   masked {mask_ms:7.2f} ms/layer/event   banded {banded_ms:7.2f} ms (shared, cacheable)")
     print(
-        f"  per layer, mask + attention:  route_b {mask_ms + results['route_b_ms']:7.2f} ms"
+        f"  per layer, mask + attention:  masked {mask_ms + results['masked_ms']:7.2f} ms"
         f"   sorted {banded_ms + results['sorted_ms']:7.2f} ms   flash {results.get('flash_ms', float('nan')):7.2f} ms"
     )
-    print("  route_b and sorted agree numerically: yes")
+    print("  masked and sorted agree numerically: yes")
     return results
 
 

@@ -1,6 +1,6 @@
-"""Measure flex ``BlockMask`` block-level sparsity for Route B per-head LSH windows.
+"""Measure flex ``BlockMask`` block-level sparsity for the masked per-head LSH windows.
 
-Route B expresses the sliding window as a constraint on each head's LSH *rank*
+The masked OR implementation expresses the sliding window as a constraint on each head's LSH *rank*
 (``|rank[h, q] - rank[h, kv]| <= window // 2``) instead of on the token index.
 Element-wise that admits exactly as many pairs as an ordinary sliding window --
 the rank window is the same width, and a rank table is a permutation, so the
@@ -9,7 +9,7 @@ admitted-pair count is *identical* for every ordering.
 The catch is that ``flex_attention`` does not skip work per element. It skips per
 **block** (``BLOCK_SIZE`` x ``BLOCK_SIZE``, 128 by default): a block is computed
 in full if it contains even one admitted pair. So the question that decides
-whether Route B is viable is not "how many pairs are admitted" (fixed) but "how
+whether masking in place is viable is not "how many pairs are admitted" (fixed) but "how
 many *blocks* do those pairs touch".
 
 Two extremes:
@@ -23,7 +23,7 @@ Two extremes:
   mask is dense, costing full N^2 with no gain over global attention.
 
 The tokens can only be laid out in one order while every head wants its own, so
-the worry was that Route B sits at the second extreme. Measured on real events it
+the worry was that it sits at the second extreme. Measured on real events it
 does not: at N ~ 13k with window 512 and 24 cells it keeps ~0.24 of blocks (vs
 0.05 banded, 0.04 ideal), because LSH orderings are not random permutations --
 every cell sorts the same 2D geometry with a different random quantile grid, so
@@ -200,7 +200,7 @@ def report(coords: torch.Tensor, args: argparse.Namespace, device: str) -> None:
         f"  block density,  per-head LSH ranks            : {float(lsh.mean()):9.5f} "
         f"  waste x{float(lsh.mean()) / elem:7.1f}   [min {float(lsh.min()):.5f}, max {float(lsh.max()):.5f}]"
     )
-    print(f"  speedup vs dense attention: baseline x{1.0 / float(baseline[0]):.1f}   Route B x{1.0 / float(lsh.mean()):.2f}")
+    print(f"  speedup vs dense attention: baseline x{1.0 / float(baseline[0]):.1f}   the masked implementation x{1.0 / float(lsh.mean()):.2f}")
 
     if args.verify:
         small = ranks[:, : args.verify_tokens].contiguous()

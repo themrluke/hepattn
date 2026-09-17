@@ -78,10 +78,10 @@ def expand_heads_for_or(x: Tensor, n_hashes: int) -> Tensor:
     all of q/k/v that is ``3 * n_hashes * B * H * N * Dh`` elements live at once -- the
     dominant activation cost of the OR path at large ``N``.
 
-    Alternative worth benchmarking: issue ``n_hashes`` separate flex calls against the
-    *unreplicated* q/k/v, one per hash with its own BlockMask, and merge the outputs with
-    :func:`or_merge_lse` exactly as here. That trades this copy for ``n_hashes`` kernel
-    launches; which wins depends on ``N``.
+    This is the *masked* OR implementation, kept as the reference and for benchmarking.
+    :func:`permute_to_rank_order` is the default: it replicates the same way but additionally
+    sorts each row, which lets every cell share one position-only mask and is ~7x cheaper end
+    to end. See the notes for the measurements.
 
     Args:
         x: ``(B, H, N, Dh)`` projected queries, keys or values (post-``separate_heads``).
@@ -102,6 +102,11 @@ def permute_to_rank_order(x: Tensor, ranks: Tensor, n_hashes: int) -> Tensor:
     ``(B, H, N, Dh) -> (B, H * n_hashes, N, Dh)``, head-major like
     :func:`expand_heads_for_or`, but with row ``h`` additionally permuted so that position
     ``p`` holds whichever token stands at rank ``p`` under cell ``h``.
+
+    Done as replicate-then-gather rather than a single advanced-index
+    (``x[:, head_of_cell[:, None], order, :]``). The latter allocates one tensor instead of two
+    and measured ~35% lower peak memory, but ~9% slower; the OR path is not memory bound
+    (0.21 GB peak at N~13k), so the faster form wins.
 
     This is the "sorted" implementation of OR amplification. Once every cell's tokens are in
     its own order, the per-head rank window collapses into an ordinary *banded* window over
