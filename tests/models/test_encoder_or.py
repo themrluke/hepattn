@@ -35,7 +35,9 @@ class _IdentityRankGrid(nn.Module):
         self.num_heads = num_heads
         self.n_hashes = n_hashes
 
-    def forward(self, coords: Tensor) -> Tensor:
+    def forward(self, coords: Tensor, valid: Tensor | None = None) -> Tensor:
+        # `valid` is accepted to match E2LSHOrderingGrid's signature and ignored: these tests
+        # have no padding, and the identity ordering is the point.
         num_tokens = coords.shape[-2]
         return torch.arange(num_tokens, device=coords.device).expand(self.num_heads, self.n_hashes, num_tokens)
 
@@ -87,7 +89,7 @@ class _HeadZeroIdentityRankGrid(nn.Module):
         rows += [torch.randperm(num_tokens, generator=generator).expand(n_hashes, num_tokens) for _ in range(num_heads - 1)]
         self.register_buffer("ranks", torch.stack(rows))  # (num_heads, n_hashes, N)
 
-    def forward(self, coords: Tensor) -> Tensor:
+    def forward(self, coords: Tensor, valid: Tensor | None = None) -> Tensor:
         return self.ranks.to(coords.device)
 
 
@@ -270,3 +272,106 @@ def test_sorted_is_the_default_and_keeps_the_shared_mask_cache():
 def test_unknown_or_impl_is_rejected():
     with pytest.raises(AssertionError, match="or_impl"):
         Encoder(num_layers=1, dim=DIM, attn_type="flex", window_size=WINDOW, or_n_hashes=1, or_impl="banana")
+
+
+def _padded_inputs(num_real: int, num_pad: int):
+    """A batch whose last ``num_pad`` slots are padding, with the coords a collate would leave."""
+    total = num_real + num_pad
+    x = torch.randn(1, total, DIM)
+    coords = torch.randn(1, total, 2)
+    coords[0, num_real:] = 0.0  # padded slots typically arrive as zeros
+    kv_mask = torch.zeros(1, total, dtype=torch.bool)
+    kv_mask[0, :num_real] = True
+    return x, coords, kv_mask
+
+
+@pytest.mark.parametrize("or_impl", ["sorted", "masked"])
+def test_padding_does_not_change_the_answer_for_real_tokens(or_impl):
+    """Padding a batch must leave the real hits' outputs untouched.
+
+    This is the property that matters and the one that is easy to get subtly wrong. Padded
+    coordinates leak into the ordering through two routes -- the projection's span, and the
+    equal-occupancy quantile bins -- and either one shifts where the bin edges fall, which
+    reorders *genuine* hits. Nothing downstream would notice: no error, no NaN, just a slightly
+    worse model. So the test runs the same real hits with and without padding attached and
+    demands the same numbers.
+    """
+    torch.manual_seed(0)
+    num_real, num_pad = 200, 56
+    x, coords, kv_mask = _padded_inputs(num_real, num_pad)
+
+    encoder = Encoder(num_layers=1, dim=DIM, attn_type="flex", window_size=WINDOW, or_n_hashes=2, or_impl=or_impl).eval()
+
+    with torch.no_grad():
+        padded = encoder(x, x_sort_value=coords[..., 1], kv_mask=kv_mask, x_coords=coords)
+        unpadded = encoder(x[:, :num_real], x_sort_value=coords[:, :num_real, 1], x_coords=coords[:, :num_real])
+
+    assert torch.isfinite(padded).all(), "padding produced non-finite activations"
+    torch.testing.assert_close(padded[:, :num_real], unpadded, rtol=1e-4, atol=1e-5)
+
+
+def test_padded_queries_keep_a_finite_softmax_row():
+    # A padded query has no valid keys, so without admitting the diagonal its whole row would be
+    # -inf: an empty softmax, a NaN output and a NaN lse that then spreads through the merge into
+    # the *real* tokens. The mask_mods always keep q == kv for exactly this reason.
+    torch.manual_seed(0)
+    x, coords, kv_mask = _padded_inputs(num_real=64, num_pad=192)  # mostly padding, worst case
+
+    encoder = Encoder(num_layers=2, dim=DIM, attn_type="flex", window_size=WINDOW, or_n_hashes=2).eval()
+    with torch.no_grad():
+        out = encoder(x, x_sort_value=coords[..., 1], kv_mask=kv_mask, x_coords=coords)
+
+    assert torch.isfinite(out).all(), "a padded query produced NaN and it spread"
+
+
+@pytest.mark.parametrize("or_impl", ["sorted", "masked"])
+def test_a_second_event_is_not_masked_with_the_first_event_s_padding(or_impl):
+    """Consecutive events with different amounts of padding must each get their own mask.
+
+    The encoder caches its position-only ``mask_mod`` and the sorted path's closure has to know
+    how many tokens are real. If that count is captured by value when the closure is built, every
+    event after the first is masked with the *first* one's padding -- attending to junk, or
+    ignoring real hits, depending on which way the count moved. Nothing raises.
+
+    Every other padding test in this file runs one event per encoder, so none of them can see it.
+    """
+    torch.manual_seed(0)
+    encoder = Encoder(num_layers=1, dim=DIM, attn_type="flex", window_size=WINDOW, or_n_hashes=2, or_impl=or_impl).eval()
+
+    first = _padded_inputs(num_real=200, num_pad=56)
+    second = _padded_inputs(num_real=60, num_pad=196)
+
+    reference = Encoder(num_layers=1, dim=DIM, attn_type="flex", window_size=WINDOW, or_n_hashes=2, or_impl=or_impl).eval()
+    reference.load_state_dict(encoder.state_dict())
+
+    with torch.no_grad():
+        x, coords, kv_mask = first
+        encoder(x, x_sort_value=coords[..., 1], kv_mask=kv_mask, x_coords=coords)
+
+        x, coords, kv_mask = second
+        after_first = encoder(x, x_sort_value=coords[..., 1], kv_mask=kv_mask, x_coords=coords)
+        on_its_own = reference(x, x_sort_value=coords[..., 1], kv_mask=kv_mask, x_coords=coords)
+
+    torch.testing.assert_close(after_first[:, :60], on_its_own[:, :60], rtol=1e-4, atol=1e-5)
+
+
+def test_padding_appearing_only_on_a_later_event_is_still_excluded():
+    # The mirror image: the first event has no padding at all, so if the validity cut is only
+    # wired up when a kv_mask happens to be present the closure is built without one and every
+    # later padded event silently attends its padding.
+    torch.manual_seed(0)
+    encoder = Encoder(num_layers=1, dim=DIM, attn_type="flex", window_size=WINDOW, or_n_hashes=2).eval()
+
+    unpadded_x = torch.randn(1, SEQ_LEN, DIM)
+    unpadded_coords = torch.randn(1, SEQ_LEN, 2)
+    x, coords, kv_mask = _padded_inputs(num_real=100, num_pad=SEQ_LEN - 100)
+
+    reference = Encoder(num_layers=1, dim=DIM, attn_type="flex", window_size=WINDOW, or_n_hashes=2).eval()
+    reference.load_state_dict(encoder.state_dict())
+
+    with torch.no_grad():
+        encoder(unpadded_x, x_sort_value=unpadded_coords[..., 1], x_coords=unpadded_coords)
+        after_unpadded = encoder(x, x_sort_value=coords[..., 1], kv_mask=kv_mask, x_coords=coords)
+        on_its_own = reference(x, x_sort_value=coords[..., 1], kv_mask=kv_mask, x_coords=coords)
+
+    torch.testing.assert_close(after_unpadded[:, :100], on_its_own[:, :100], rtol=1e-4, atol=1e-5)
