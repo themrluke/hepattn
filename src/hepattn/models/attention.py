@@ -333,10 +333,12 @@ class Attention(nn.Module):
         # Compile flex unless explicitly told not to: uncompiled it materialises the full N x N
         # score matrix, so it is both slower and far heavier than the fused kernel (measured at
         # N=4096, 24 mask rows: 44.5 ms / 8.5 GB uncompiled vs 11.2 ms / 0.11 GB compiled).
-        # Not on CPU, though: inductor cannot lower flex with return_lse there, which the OR path
-        # needs, so auto-compiling would break CPU-only runs and tests. An explicit True still wins.
-        auto_compile = self.attn_type == "flex" and torch.cuda.is_available()
-        compile_attn = self.torch_compile if self.torch_compile is not None else auto_compile
+        compile_attn = self.torch_compile if self.torch_compile is not None else self.attn_type == "flex"
+        # Kept uncompiled as well, because inductor cannot lower flex with return_lse on CPU
+        # ("torch.compile on CPU only supports inference and return_lse is not supported yet") and
+        # the OR merge needs the lse. Which one runs is decided per call from the tensors' device,
+        # not from torch.cuda.is_available(): a GPU machine can still be running a CPU model.
+        self.attn_uncompiled = self.attn
         if compile_attn:
             self.attn = torch.compile(self.attn, dynamic=True)
         return self.attn_type
@@ -505,6 +507,7 @@ class Attention(nn.Module):
 
         # Fused attention
         if self.attn_type == "flex":
+            attn_fn = self.attn if q.is_cuda else self.attn_uncompiled
             assert isinstance(attn_mask, BlockMask) or attn_mask is None, "Flex attention requires a BlockMask for attention masking."
             assert not kv_mask, "Flex attention with key/value padding masks is not supported yet."
             # Batch size > 1 only supported when no block_mask is provided
@@ -517,7 +520,7 @@ class Attention(nn.Module):
                 # position and every cell can share one position-only BlockMask. Un-permute the
                 # outputs and their lse before merging, so the merge sees token order.
                 q, k, v = (permute_to_rank_order(t, or_ranks, or_n_hashes) for t in (q, k, v))
-                out, lse = self.attn(q, k, v, block_mask=attn_mask, score_mod=score_mod, return_lse=True)
+                out, lse = attn_fn(q, k, v, block_mask=attn_mask, score_mod=score_mod, return_lse=True)
                 out = or_merge_lse(restore_token_order(out, or_ranks), restore_token_order(lse, or_ranks), or_n_hashes)
             elif or_n_hashes is not None:
                 # Masked OR-of-orderings. Nothing moves; each cell's window is expressed as a
@@ -525,10 +528,10 @@ class Attention(nn.Module):
                 # Kept as the reference implementation and for benchmarking -- it is ~12x more
                 # expensive end to end, almost all of it rebuilding that mask per layer per event.
                 q, k, v = (expand_heads_for_or(t, or_n_hashes) for t in (q, k, v))
-                out, lse = self.attn(q, k, v, block_mask=attn_mask, score_mod=score_mod, return_lse=True)
+                out, lse = attn_fn(q, k, v, block_mask=attn_mask, score_mod=score_mod, return_lse=True)
                 out = or_merge_lse(out, lse, or_n_hashes)
             else:
-                out = self.attn(q, k, v, block_mask=attn_mask, score_mod=score_mod)
+                out = attn_fn(q, k, v, block_mask=attn_mask, score_mod=score_mod)
 
         # Standard torch attention
         elif self.attn_type == "torch":
