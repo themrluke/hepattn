@@ -127,3 +127,6 @@ tmp/
 src/hepattn/experiments/cld/plots/
 src/hepattn/experiments/cld/eval/
 src/hepattn/experiments/trackml/eval/
+
+
+src/hepattn/experiments/colliderml/notes_for_obsidian/*
