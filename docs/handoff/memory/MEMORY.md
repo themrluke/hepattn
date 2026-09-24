@@ -1,0 +1,1 @@
+- [Route B per-head ordering](route-b-per-head-ordering.md) — OR-amplification branch; per-head LSH ordering + rank-table masking design and steps
