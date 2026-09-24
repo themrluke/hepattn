@@ -9,9 +9,9 @@ name: ColliderML_Tracking_pu0
 data:
   # Paths to preprocessed data directories
   # Shards 00002-00101 (100k events) train, 00000-00001 (2k events) val.
-  train_dir: /share/rcif2/ljohnson/data/colliderml/v1/pu0/train
-  val_dir: /share/rcif2/ljohnson/data/colliderml/v1/pu0/val
-  test_dir: /share/rcif2/ljohnson/data/colliderml/v1/pu0/val
+  train_dir: /eos/user/l/ljohnson/datasets/ColliderML/v1/pu0/train
+  val_dir: /eos/user/l/ljohnson/datasets/ColliderML/v1/pu0/val
+  test_dir: /eos/user/l/ljohnson/datasets/ColliderML/v1/pu0/val
 
   # Event process name in this directory layout
   event_type: ttbar

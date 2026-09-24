@@ -4,9 +4,9 @@ name: ColliderML_HitFiltering_Lite
 data:
   # 80/20 shard-level split via symlinks into directories that mirror the
   # source collection layout (ttbar_pu200_<collection>/). test reuses val for now.
-  train_dir: /share/rcif2/ljohnson/data/colliderml/v1/pu200/train/
-  val_dir: /share/rcif2/ljohnson/data/colliderml/v1/pu200/val/
-  test_dir: /share/rcif2/ljohnson/data/colliderml/v1/pu200/val/
+  train_dir: /eos/user/l/ljohnson/datasets/ColliderML/v1/pu200/train/
+  val_dir: /eos/user/l/ljohnson/datasets/ColliderML/v1/pu200/val/
+  test_dir: /eos/user/l/ljohnson/datasets/ColliderML/v1/pu200/val/
 
   num_workers: 10
   num_train: -1

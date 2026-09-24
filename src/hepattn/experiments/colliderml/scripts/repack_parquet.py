@@ -11,8 +11,8 @@ repacked; symlink or copy the rest so the directory layout stays complete.
 
 Example (repack the heavy tracker-hit + particle collections of the train split):
     python scripts/repack_parquet.py \
-        --src /share/rcif2/ljohnson/data/colliderml/v1/pu200/train \
-        --dst /share/rcif2/ljohnson/data/colliderml/v1_repacked/pu200/train \
+        --src /eos/user/l/ljohnson/datasets/ColliderML/v1/pu200/train \
+        --dst /eos/user/l/ljohnson/datasets/ColliderML/v1_repacked/pu200/train \
         --collections ttbar_pu200_tracker_hits ttbar_pu200_particles \
         --rows-per-group 5
 """
