@@ -146,8 +146,8 @@ Asserts in `Encoder.__init__` enforce the first three. `MaskFormer` additionally
 
 ## Presentation
 
-`src/hepattn/experiments/colliderml/notes_for_obsidian/presentation/` (carried on this branch)
-holds a 33-slide deck, `OR_amplification.pptx`, built by `build_deck.py` from figures generated
+`src/hepattn/experiments/colliderml/notes_for_obsidian/presentation/` (carried on the
+`notes-and-presentation` branch) holds a 33-slide deck, `OR_amplification.pptx`, built by `build_deck.py` from figures generated
 by `figs_*.py`, plus a matching speaker script in `SCRIPT.md`. To rebuild, run the scripts with
 the project Python; the `.venv/` there (python-pptx, pypdf) was **not** committed, so recreate it
 if needed.

@@ -9,8 +9,9 @@
   pushing — it should print nothing.
 - **Do not commit the Obsidian notes to working branches.** `notes_for_obsidian/` is Luke's
   personal working directory and is gitignored on `OR-amplification`. The one exception is the
-  `handoff/context` branch, where the notes were committed deliberately to move them between
-  machines.
+  `notes-and-presentation` branch, where they were committed deliberately, and force-added past
+  the ignore rule, to move them between machines. They must stay off `main`,
+  `OR-amplification` and `colliderml-baseline`.
 - **Commit messages** are lowercase, plain, and describe the change, e.g. "handle padded hits in
   the per-head orderings", "pick the compiled or uncompiled flex kernel per call, from the
   tensor device".
@@ -69,14 +70,19 @@ layout, `masked` vs `sorted` agreement, padding, cache staleness across events),
 
 - `origin` is `git@github.com:themrluke/hepattn.git`; `upstream` is
   `git@github.com:samvanstroud/hepattn.git`.
-- Branches: `main`, `luke_dev`, `OR-amplification`, `colliderml-baseline`, `handoff/context`.
-  See `HANDOFF.md` for what each holds.
-- `tests/outputs/` accumulates untracked test artifacts; it is noise, not work in progress.
+- Branches: `main`, `luke_dev`, `OR-amplification`, `colliderml-baseline`, `handoff/context`,
+  `notes-and-presentation`. See `HANDOFF.md` for what each holds.
+- `tests/outputs/` accumulates diagnostic plots written by the test suite. It is ignored on
+  `OR-amplification` and, since the `.gitignore` fix on `colliderml-baseline`, there too —
+  along with `*.jpg` / `*.jpeg`, which the old rules missed (only `*.png` was covered). If a
+  branch off `main` shows `tests/outputs/` as untracked, it is missing that fix.
 
 ## Notes
 
-`src/hepattn/experiments/colliderml/notes_for_obsidian/` (committed on this branch only) is
-Luke's Obsidian vault content for this project:
+`src/hepattn/experiments/colliderml/notes_for_obsidian/` (committed on the
+`notes-and-presentation` branch only — use `git worktree add ../hepattn-notes
+notes-and-presentation` to keep it visible while working on another branch) is Luke's Obsidian
+vault content for this project:
 
 | File | Contents |
 |---|---|
