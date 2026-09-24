@@ -87,6 +87,7 @@ class ColliderMLDataset(Dataset):
         return_calohits: bool = True,
         return_tracks: bool = True,
         event_type: str = "ttbar",
+        pileup: int = 200,
         build_calohit_associations: bool = True,
         sihit_volume_ids: list[int] | None = None,
         sihit_max_abs_eta: float | None = None,
@@ -115,7 +116,8 @@ class ColliderMLDataset(Dataset):
         self.build_dense_masks = build_dense_masks
 
         self.dirpath = Path(dirpath)
-        dataset_prefix = f"{event_type}_pu200"
+        # Collections are stored as <event_type>_pu<pileup>_<collection>, e.g. ttbar_pu0_particles.
+        dataset_prefix = f"{event_type}_pu{pileup}"
         self.collection_dirs = {
             "particles": self.dirpath / f"{dataset_prefix}_particles",
             "tracker_hits": self.dirpath / f"{dataset_prefix}_tracker_hits",
@@ -134,7 +136,7 @@ class ColliderMLDataset(Dataset):
 
         missing_dirs = [name for name in sorted(required_collections) if not self.collection_dirs[name].is_dir()]
         if missing_dirs:
-            msg = f"Missing required dataset directories for '{event_type}': {missing_dirs}. Expected these under {self.dirpath}."
+            msg = f"Missing required dataset directories for '{dataset_prefix}': {missing_dirs}. Expected these under {self.dirpath}."
             raise ValueError(msg)
 
         # Use particle shards as the reference and keep only shard names that are
