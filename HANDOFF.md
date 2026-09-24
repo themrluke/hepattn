@@ -2,7 +2,11 @@
 
 This branch (`handoff/context`) exists to move the whole state of this project from one
 machine to another. It carries no code changes of its own: it is branched from
-`OR-amplification`, plus a `docs/handoff/` directory and the Obsidian working notes.
+`OR-amplification`, plus a `docs/handoff/` directory.
+
+The Obsidian notes and the presentation live on a **separate** branch,
+`notes-and-presentation`, so that neither they nor the 2.7 MB `.pptx` ever land on a working
+branch. See [Getting at the notes](#getting-at-the-notes) below.
 
 **If you are a new Claude Code session: read `docs/handoff/` in order before doing anything.**
 Start with `01-orientation.md`, which says where the work stands and what comes next.
@@ -40,8 +44,27 @@ Two strands of work:
 | `main` | Upstream-tracking; in sync with `origin/main`. |
 | `luke_dev` | Older work; in sync with `origin/luke_dev`. |
 | `OR-amplification` | All OR-amplification work. Pushed, working tree clean. |
-| `colliderml-baseline` | Branched from `main`. Two new commits: the `pileup` dataset argument and `configs/pu0.yaml`. |
-| `handoff/context` | This branch: handoff docs + Obsidian notes. Branched from `OR-amplification`. |
+| `colliderml-baseline` | Branched from `main`. The `pileup` dataset argument, `configs/pu0.yaml`, and a `.gitignore` fix for test plots. |
+| `handoff/context` | This branch: handoff docs only. Branched from `OR-amplification`. |
+| `notes-and-presentation` | This branch plus the Obsidian notes and the presentation. Branched from `handoff/context`. |
+
+## Getting at the notes
+
+The notes are deliberately on their own branch, which means that **checking out any other branch
+removes them from the working tree** — they are committed, not lost, but they disappear from
+disk. To keep them available alongside the code, use a second worktree rather than switching
+back and forth:
+
+```bash
+git worktree add ../hepattn-notes notes-and-presentation
+```
+
+That leaves the notes permanently visible in `../hepattn-notes/src/hepattn/experiments/colliderml/notes_for_obsidian/`
+while you work on any branch in the main checkout. Point Obsidian at that directory, or copy the
+notes into your vault.
+
+The presentation's `.venv/` (python-pptx, pypdf) and `__pycache__` were **not** committed;
+recreate the virtualenv if you need to rebuild the deck.
 
 ## First thing to do on the new machine
 
