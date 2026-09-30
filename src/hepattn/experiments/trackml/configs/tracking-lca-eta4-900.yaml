@@ -2,9 +2,9 @@ seed_everything: 42
 name: TRK-v8-eta4-lca-eta4-900
 data:
   # isambard
-  train_dir:  /share/rcif2/pduckett/data/prepped/train/
-  val_dir: /share/rcif2/pduckett/data/prepped/val/
-  test_dir: /share/rcif2/pduckett/data/prepped/test/
+  train_dir: /eos/user/l/ljohnson/datasets/TrackML/prepped/train/
+  val_dir: /eos/user/l/ljohnson/datasets/TrackML/prepped/val/
+  test_dir: /eos/user/l/ljohnson/datasets/TrackML/prepped/test/
 
   hit_eval_train: /share/rcif2/pduckett/hepattn-dq/HF-pix-900MeV-eta4_20260214-T194855/train_eval.h5
   hit_eval_val: /share/rcif2/pduckett/hepattn-dq/HF-pix-900MeV-eta4_20260214-T194855/val_eval.h5

@@ -2,9 +2,9 @@ seed_everything: 42
 name: HF-900MeV-eta4
 
 data:
-  train_dir: /projects/u5du/pduckett/data_new/train/
-  val_dir: /projects/u5du/pduckett/data_new/val/
-  test_dir: /projects/u5du/pduckett/data_new/test/
+  train_dir: /eos/user/l/ljohnson/datasets/TrackML/prepped/train/
+  val_dir: /eos/user/l/ljohnson/datasets/TrackML/prepped/val/
+  test_dir: /eos/user/l/ljohnson/datasets/TrackML/prepped/test/
 
   num_workers: 15
   num_train: -1
