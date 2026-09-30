@@ -379,6 +379,10 @@ class MaskFormerDecoder(nn.Module):
                 if self.debug:
                     outputs[f"layer_{layer_index}"]["attn_mask_lca"] = attn_mask
 
+            logits = None
+            if decoder_layer.cross_attn_mode == "kmeans":
+                logits = self._extract_kmeans_logits(outputs[f"layer_{layer_index}"], num_constituents)
+
             # Update the keys and queries
             x["query_embed"], x["key_embed"] = decoder_layer(
                 x["query_embed"],
