@@ -352,6 +352,7 @@ class TestMaskFormerDecoder:  # noqa: PLR0904
         """Test forward pass with local_strided_attn=True."""
         x, input_names = sample_local_strided_decoder_data
         decoder_local_strided_attn.tasks = []  # Empty task list
+        decoder_local_strided_attn.debug = True  # Masks are only recorded in the outputs in debug mode
 
         updated_x, outputs = decoder_local_strided_attn(x, input_names)
 
@@ -368,8 +369,8 @@ class TestMaskFormerDecoder:  # noqa: PLR0904
             assert f"layer_{i}" in outputs
             assert isinstance(outputs[f"layer_{i}"], dict)
             # Check that attention mask was created for local strided attention
-            assert "attn_mask" in outputs[f"layer_{i}"]
-            attn_mask = outputs[f"layer_{i}"]["attn_mask"]
+            assert "attn_mask_lca" in outputs[f"layer_{i}"]
+            attn_mask = outputs[f"layer_{i}"]["attn_mask_lca"]
             assert attn_mask.shape == (1, NUM_QUERIES, SEQ_LEN)
             assert attn_mask.dtype == torch.bool
 
@@ -425,6 +426,7 @@ class TestMaskFormerDecoder:  # noqa: PLR0904
         x["key_valid"] = torch.ones(BATCH_SIZE, SEQ_LEN, dtype=torch.bool)
 
         decoder.tasks = [MockTask1(), MockTask2()]
+        decoder.debug = True  # Masks are only recorded in the outputs in debug mode
 
         _, outputs = decoder(x, input_names)
 
@@ -437,8 +439,8 @@ class TestMaskFormerDecoder:  # noqa: PLR0904
             assert attn_mask.shape == (BATCH_SIZE, NUM_QUERIES, SEQ_LEN)
             assert attn_mask.dtype == torch.bool
 
-            # check the values
-            assert attn_mask.sum() == 65
+            # check the values: the logged mask is recorded before the all-false rows are unmasked
+            assert attn_mask.sum() == 5
             assert attn_mask[0, 1, 1]
             assert attn_mask[1, 2, 3]
             assert attn_mask[0, 1, 6]
@@ -446,10 +448,10 @@ class TestMaskFormerDecoder:  # noqa: PLR0904
             assert attn_mask[1, 4, 8]
 
             # test some false entries
-            assert attn_mask[0, 0, 0]  # becomes True due to processing
+            assert not attn_mask[0, 0, 0]  # all-false row, only unmasked after logging
             assert not attn_mask[0, 1, 0]
-            assert attn_mask[0, 0, 1]  # becomes True
-            assert attn_mask[1, 0, 1]  # becomes True
+            assert not attn_mask[0, 0, 1]  # all-false row, only unmasked after logging
+            assert not attn_mask[1, 0, 1]  # all-false row, only unmasked after logging
             assert not attn_mask[0, 1, 3]
             assert not attn_mask[1, 4, 5]
 
