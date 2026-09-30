@@ -1,22 +1,16 @@
 seed_everything: 42
-name: TRK-v8-3l-fast-fix-vec
+name: TRK-v8-eta4-lca-eta4-900
 data:
-  # hypatia
-  train_dir: data/trackml/prepped/
-  val_dir: data/trackml/prepped/
-  test_dir: data/trackml/prepped/
-  hit_eval_train: /share/rcif2/ljohnson/hepattn/src/hepattn/experiments/trackml/logs/HC-v3_20250612-T220925/ckpts/epoch=015-val_loss=0.19298_train_eval.h5
-  hit_eval_val: /share/rcif2/ljohnson/hepattn/src/hepattn/experiments/trackml/logs/HC-v3_20250612-T220925/ckpts/epoch=015-val_loss=0.19298_val_eval.h5
-  hit_eval_test: /share/rcif2/ljohnson/hepattn/src/hepattn/experiments/trackml/logs/HC-v3_20250612-T220925/ckpts/epoch=015-val_loss=0.19298_test_eval.h5
+  # isambard
+  train_dir:  /share/rcif2/pduckett/data/prepped/train/
+  val_dir: /share/rcif2/pduckett/data/prepped/val/
+  test_dir: /share/rcif2/pduckett/data/prepped/test/
 
-  # # isambard
-  # train_dir: /projects/u5du/pduckett/data_new/train/
-  # val_dir: /projects/u5du/pduckett/data_new/val/
-  # test_dir: /projects/u5du/pduckett/data_new/test/
-  # hit_eval_train: /projects/u5du/pduckett/filter_evals/eta2p5pt600/epoch=100-val_loss=0.15778_train_eval.h5
-  # hit_eval_val: /projects/u5du/pduckett/filter_evals/eta2p5pt600/epoch=100-val_loss=0.15778_val_eval.h5
-  # hit_eval_test: /projects/u5du/pduckett/filter_evals/eta2p5pt600/epoch=100-val_loss=0.15778_test_eval.h5
-
+  hit_eval_train: /share/rcif2/pduckett/hepattn-dq/HF-pix-900MeV-eta4_20260214-T194855/train_eval.h5
+  hit_eval_val: /share/rcif2/pduckett/hepattn-dq/HF-pix-900MeV-eta4_20260214-T194855/val_eval.h5
+  hit_eval_test: /share/rcif2/pduckett/hepattn-dq/HF-pix-900MeV-eta4_20260214-T194855/test_eval.h5
+  hit_filter_threshold: 0.314
+  
   num_workers: 10
   num_train: -1
   num_test: -1
@@ -28,16 +22,16 @@ data:
   hit_volume_ids: [7, 8, 9]
 
   # Minimum pt for a particle to be deemed reconstructible
-  particle_min_pt: 0.6
+  particle_min_pt: 0.9
 
   # Maximum absolute eta for a particle to be deemed reconstructible
-  particle_max_abs_eta: 2.5
+  particle_max_abs_eta: 4
 
   # Minimum number of true hits for a particle to be deemed reconstructible
   particle_min_num_hits: 3
 
   # Maximum number of reconstructable particles allowed in an event
-  event_max_num_particles: &num_objects 2200
+  event_max_num_particles: &num_objects 1800
   strict_max_objects: false
 
   # Define which inputs will be available to the model
@@ -74,12 +68,12 @@ data:
 
 trainer:
   # Training stuff here
-  max_epochs: 1 # was 10
+  max_epochs: 30
   accelerator: gpu
   devices: 2
   precision: bf16-mixed
   log_every_n_steps: 50
-  default_root_dir: /share/rcif2/ljohnson/hepattn/src/hepattn/experiments/trackml/logs/
+  default_root_dir: ./logs/
   gradient_clip_val: 0.1
   enable_progress_bar: true
 
@@ -101,6 +95,9 @@ trainer:
       init_args:
         skip_dynamic_cudagraphs: true
         #mode: max-autotune # use for fastest inference
+    # - class_path: hepattn.callbacks.AttnMaskLogger
+    #   init_args:
+    #     log_every_n_batches: 100
     - class_path: hepattn.callbacks.InferenceTimer
     - class_path: hepattn.callbacks.SaveConfig
     - class_path: hepattn.callbacks.Checkpoint
@@ -123,7 +120,7 @@ model:
 
   # Learning rate scheduler config
   lrs_config:
-    initial: 1e-7
+    initial: 1e-5
     max: 5e-5
     end: 1e-5
     pct_start: 0.02
@@ -137,7 +134,10 @@ model:
     class_path: hepattn.models.MaskFormer
     init_args:
       dim: &dim 256
-      input_sort_field: phi
+      sorter:
+        class_path: hepattn.utils.sorter.Sorter
+        init_args:
+          input_sort_field: phi
       input_nets:
         class_path: torch.nn.ModuleList
         init_args:
@@ -197,15 +197,18 @@ model:
         dynamic_query_source: hit
         num_decoder_layers: &num_dec_layers 3
         num_queries: *num_objects
-        mask_attention: true
+        mask_attention: false
+        local_strided_attn: true
+        window_size: 64
+        window_wrap: true
+        block_size: 16
         use_query_masks: false
         unmask_all_false: false
         decoder_layer_config:
           dim: *dim
           norm: CustomLayerNorm
           hybrid_norm: true
-          dense_kwargs: {activation: SwiGLU}
-          attn_kwargs: {bias: false}
+          attn_kwargs: {bias: false, attn_type: flex}
           bidirectional_ca: false
 
       encoder_tasks:
@@ -218,7 +221,7 @@ model:
                 input_object: hit
                 classes: ["is_first"]
                 loss_weight: 1.0
-                threshold: 0.05
+                threshold: 0.25
                 permute_loss: false
                 net:
                   class_path: hepattn.models.Dense
@@ -256,10 +259,10 @@ model:
                 dim: *dim
                 losses:
                   mask_dice: 2.0
-                  mask_focal: 100.0
+                  mask_focal: 25.0
                 costs:
                   mask_dice: 2.0
-                  mask_focal: 100.0
+                  mask_focal: 25.0
                 null_weight: 1.0
 
             - class_path: hepattn.models.task.IoUPredictionTask
@@ -270,7 +273,7 @@ model:
                 mask_logit_key: track_hit_logit
                 target_mask_key: particle_hit
                 dim: *dim
-                loss_weight: 1.0
+                loss_weight: 2.0
 
       matcher:
         class_path: hepattn.models.matcher.Matcher

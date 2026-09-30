@@ -1,4 +1,8 @@
+import hashlib
+import json
 import warnings
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import h5py
 import numpy as np
@@ -154,6 +158,81 @@ def check_reconstructable(tracks, parts, eta_cut=2.5, pt_cut=1):
         tracks["reconstructable"] = tracks["reconstructable"] & (tracks["track_eta"].abs() < eta_cut)
     if "track_pt" in tracks.columns:
         tracks["reconstructable"] = tracks["reconstructable"] & (tracks["track_pt"] > pt_cut)
+    if "out_of_acceptance_match" in tracks.columns:
+        tracks["reconstructable"] = tracks["reconstructable"] & (~tracks["out_of_acceptance_match"])
+
+
+def recover_out_of_acceptance_matches(f, idx, tracks, masks, key_mode=None, hit_order_mode="auto"):
+    """Relabel fake tracks that actually reconstruct particles excluded from target slots."""
+    tracks["out_of_acceptance_match"] = np.zeros(len(tracks), dtype=bool)
+    tracks["out_of_acceptance_particle_id"] = np.full(len(tracks), -1, dtype=np.int64)
+    if key_mode == "old" or tracks.empty:
+        return
+
+    hit_particle_ids = _load_hit_particle_ids(f, idx, hit_order_mode=hit_order_mode)
+    if hit_particle_ids is None:
+        return
+
+    hit_particle_ids = np.asarray(hit_particle_ids, dtype=np.int64)
+    if hit_particle_ids.shape[0] != masks.shape[1]:
+        warnings.warn(
+            f"Cannot recover out-of-acceptance matches for event {idx!r}: hit particle id length {hit_particle_ids.shape[0]} does not match mask hit axis {masks.shape[1]}.",
+            stacklevel=2,
+        )
+        return
+
+    target_particle_ids = np.array(f[idx]["targets"]["particle_id"][:][0], dtype=np.int64)
+    target_particle_valid = np.array(f[idx]["targets"]["particle_valid"][:][0], dtype=bool)
+    target_particle_ids = target_particle_ids[target_particle_valid]
+
+    valid_hit_particle_ids = hit_particle_ids[hit_particle_ids > 0]
+    out_of_acceptance_particle_ids = np.unique(valid_hit_particle_ids[~np.isin(valid_hit_particle_ids, target_particle_ids)])
+    if out_of_acceptance_particle_ids.size == 0:
+        return
+
+    candidate_mask = (~tracks["duplicate"].to_numpy()) & (~tracks["eff_dm"].to_numpy())
+    if not np.any(candidate_mask):
+        return
+
+    candidate_track_rows = tracks.index.to_numpy(dtype=np.int64)[candidate_mask]
+    candidate_masks = masks[candidate_track_rows]
+    if candidate_masks.size == 0:
+        return
+
+    truth_masks = out_of_acceptance_particle_ids[:, None] == hit_particle_ids[None, :]
+    overlap = truth_masks.astype(np.int8) @ candidate_masks.T.astype(np.int8)
+    best_match_n = np.asarray(np.max(overlap, axis=0)).reshape(-1)
+    matched = best_match_n > 0
+    if not np.any(matched):
+        return
+
+    best_match_idx = np.asarray(np.argmax(overlap, axis=0)).reshape(-1)
+    truth_hits = np.sum(truth_masks, axis=-1)
+    matched_truth_hits = truth_hits[best_match_idx]
+    pred_hits = tracks.loc[tracks.index[candidate_mask], "n_pred_hits"].to_numpy()
+
+    precision = np.where(best_match_n > 0, best_match_n / np.maximum(pred_hits, 1), -1.0)
+    recall = np.where(best_match_n > 0, best_match_n / np.maximum(matched_truth_hits, 1), -1.0)
+    recovered = matched & (precision > 0.5) & (recall > 0.5)
+    if not np.any(recovered):
+        return
+
+    recovered_rows = tracks.index.to_numpy()[candidate_mask][recovered]
+    recovered_particle_ids = out_of_acceptance_particle_ids[best_match_idx[recovered]]
+    recovered_precision = precision[recovered]
+    recovered_recall = recall[recovered]
+    recovered_true_hits = matched_truth_hits[recovered]
+    recovered_matched_hits = best_match_n[recovered]
+
+    tracks.loc[recovered_rows, "out_of_acceptance_match"] = True
+    tracks.loc[recovered_rows, "out_of_acceptance_particle_id"] = recovered_particle_ids
+    tracks.loc[recovered_rows, "n_true_hits"] = recovered_true_hits
+    tracks.loc[recovered_rows, "n_matched_hits"] = recovered_matched_hits
+    tracks.loc[recovered_rows, "precision"] = recovered_precision
+    tracks.loc[recovered_rows, "recall"] = recovered_recall
+    tracks.loc[recovered_rows, "eff_dm"] = True
+    tracks.loc[recovered_rows, "eff_perfect"] = (recovered_precision == 1.0) & (recovered_recall == 1.0)
+    tracks.loc[recovered_rows, "eff_lhc"] = recovered_precision > 0.75
 
 
 def build_incidence(f, idx):  # for key_mode = "old"
@@ -225,6 +304,20 @@ def _infer_auto_hit_order_mode(f, masks, targets, unsort_idx):
     return "unsort_preds" if score_unsorted > score_saved else "as_saved"
 
 
+def _get_hit_sort_idx(f, idx):
+    sort_field = f.attrs.get("input_sort_field", "phi")
+    if isinstance(sort_field, bytes):
+        sort_field = sort_field.decode()
+    sort_field = str(sort_field)
+
+    try:
+        sort_values = np.array(f[idx][f"outputs/final/{sort_field}/hit_{sort_field}"][:][0])
+    except KeyError:
+        return None, sort_field
+
+    return np.argsort(sort_values, kind="stable"), sort_field
+
+
 def _align_hit_order(f, idx, masks, targets, mode="auto"):
     valid_modes = {"auto", "as_saved", "unsort_preds", "sort_targets"}
     if mode not in valid_modes:
@@ -234,23 +327,14 @@ def _align_hit_order(f, idx, masks, targets, mode="auto"):
     if mode == "as_saved":
         return masks, targets
 
-    sort_field = f.attrs.get("input_sort_field", "phi")
-    if isinstance(sort_field, bytes):
-        sort_field = sort_field.decode()
-    sort_field = str(sort_field)
-
-    # Sort values are stored under outputs/final/<sort_field>/hit_<sort_field> when write_outputs=True.
-    try:
-        sort_values = np.array(f[idx][f"outputs/final/{sort_field}/hit_{sort_field}"][:][0])
-    except KeyError:
+    sort_idx, sort_field = _get_hit_sort_idx(f, idx)
+    if sort_idx is None:
         if mode != "auto":
             warnings.warn(
                 f"Cannot apply hit_order_mode={mode!r}: missing sort values for field {sort_field!r}. Using saved ordering.",
                 stacklevel=2,
             )
         return masks, targets
-
-    sort_idx = np.argsort(sort_values, kind="stable")
 
     if masks.shape[-1] != sort_idx.shape[0] or targets.shape[-1] != sort_idx.shape[0]:
         warnings.warn(
@@ -270,6 +354,39 @@ def _align_hit_order(f, idx, masks, targets, mode="auto"):
         targets = targets[:, sort_idx]
 
     return masks, targets
+
+
+def _load_hit_particle_ids(f, idx, hit_order_mode="auto"):
+    targets_group = f[idx].get("targets")
+    if targets_group is None:
+        return None
+
+    hit_particle_ids = None
+    for dataset_name in ("hit_particle_id", "key_particle_id"):
+        if dataset_name in targets_group:
+            hit_particle_ids = np.array(targets_group[dataset_name][:][0])
+            break
+
+    if hit_particle_ids is None:
+        return None
+
+    if hit_order_mode == "sort_targets":
+        sort_idx, sort_field = _get_hit_sort_idx(f, idx)
+        if sort_idx is None:
+            warnings.warn(
+                f"Cannot align hit particle ids for hit_order_mode={hit_order_mode!r}: missing sort values for field {sort_field!r}. Using saved ordering.",
+                stacklevel=2,
+            )
+            return hit_particle_ids
+        if hit_particle_ids.shape[0] != sort_idx.shape[0]:
+            warnings.warn(
+                f"Cannot align hit particle ids for hit_order_mode={hit_order_mode!r}: sort length {sort_idx.shape[0]} does not match hit axis.",
+                stacklevel=2,
+            )
+            return hit_particle_ids
+        return hit_particle_ids[sort_idx]
+
+    return hit_particle_ids
 
 
 def get_masks(f, idx, tracks, parts, key_mode=None, hit_order_mode="auto"):
@@ -336,7 +453,7 @@ def process_particles(f, idx, parts, particle_targets=None, key_mode=None):
             parts["particle_" + x] = np.array(f[idx]["targets"]["particle_" + x][:][0])
 
 
-def process_tracks(f, idx, tracks, parts, masks, targets, key_mode=None, iou_threshold=0.0, track_valid_threshold=0.5):
+def process_tracks(f, idx, tracks, parts, masks, targets, key_mode=None, iou_threshold=0.0, track_valid_threshold=0.5, match_min_hits=0, match_min_pt=None):
     """Track matching, fits track masks to target masks.
 
     Arguments:
@@ -361,6 +478,12 @@ def process_tracks(f, idx, tracks, parts, masks, targets, key_mode=None, iou_thr
         IoU threshold for valid tracks (default: 0.1)
     track_valid_threshold: float
         Track valid probability threshold (default: 0.5)
+    match_min_hits: int
+        Minimum number of true hits for a truth particle to be eligible for matching (default: 0, no cut).
+        Predicted tracks whose best-matching particle fails this cut are treated as unmatched.
+    match_min_pt: float, optional
+        Minimum pT [GeV] for a truth particle to be eligible for matching (default: None, no cut).
+        Predicted tracks whose best-matching particle fails this cut are treated as unmatched.
 
     Returns:
     ----------
@@ -382,8 +505,9 @@ def process_tracks(f, idx, tracks, parts, masks, targets, key_mode=None, iou_thr
     tracks_out["n_true_hits"] = -1
     tracks_out["n_matched_hits"] = -1
     tracks_out["duplicate"] = False
+    tracks_out["matched_pid"] = np.full(len(tracks_out), -1, dtype=np.int64)
     if not np.any(valid):  # none valid tracks
-        return tracks_out  # return minimal DataFrame
+        return tracks_out[valid], valid
 
     # if valid tracks exist
     if targets.shape[1] != masks.shape[1]:
@@ -395,33 +519,59 @@ def process_tracks(f, idx, tracks, parts, masks, targets, key_mode=None, iou_thr
     else:
         int_masks = masks.T.astype(np.int8)
 
-    overlap = targets.astype(np.int8) @ int_masks  # matrix multiplication (P,H) * (H,N) -> (P,N)
-    # Hint to self: index ij in this overlap matrix is the number of matched hits between particle i and track j
-    best_match_n = np.max(overlap, axis=0)  # find the maximum amount of matched hits to a particle for each track (N,)
-    best_match_pid = np.argmax(overlap, axis=0)  # identify the particle index that best matches with each track (N,)
-    matched = best_match_n > 0  # label tracks that matches some particle
-    order = np.argsort(-1 * best_match_n, kind="mergesort")  # track index ordered in descending amount of matched hits (N,)
-    keep = np.zeros(masks.shape[0], dtype=bool)  # Tracks to keep, shape = (N, )
-    taken = np.zeros(targets.shape[0], dtype=bool)  # Particles with matching track, shape = (P,)
-    seen_masks = {}  # dict to store unique masks
-    for tid in order:  # loop over array of track indices, in descending order of matching hits
-        # identify duplicated tracks
+    # Build an eligibility mask for truth particles. Only eligible particles can be
+    # assigned to a predicted track; predicted tracks whose best match is an ineligible
+    # particle are treated as unmatched (and counted as fakes if they are valid).
+    part_eligible = np.ones(targets.shape[0], dtype=bool)
+    if match_min_hits > 0:
+        part_eligible &= parts["n_true_hits"].to_numpy() >= match_min_hits
+    if match_min_pt is not None and "particle_pt" in parts.columns:
+        part_eligible &= parts["particle_pt"].to_numpy() >= match_min_pt
+    eligible_idx = np.where(part_eligible)[0]
+
+    if eligible_idx.size > 0:
+        # (P_eligible, H) @ (H, N) -> (P_eligible, N): hit overlap between eligible particles and all tracks
+        match_targets = targets[eligible_idx]
+        overlap = match_targets.astype(np.int8) @ int_masks
+        # best_match_* are indexed over all N tracks; best_match_pid holds full particle indices
+        best_match_n = np.asarray(np.max(overlap, axis=0)).flatten()
+        best_match_pid = eligible_idx[np.asarray(np.argmax(overlap, axis=0)).flatten()]
+    else:
+        best_match_n = np.zeros(masks.shape[0], dtype=np.int32)
+        best_match_pid = np.zeros(masks.shape[0], dtype=np.int64)
+
+    matched = best_match_n > 0  # label tracks that match some eligible particle
+    order = np.argsort(-1 * best_match_n, kind="mergesort")  # descending matched-hit count
+    keep = np.zeros(masks.shape[0], dtype=bool)
+    taken = np.zeros(targets.shape[0], dtype=bool)
+    seen_masks = {}
+
+    # Use numpy arrays for per-track accumulation; assign to DataFrame in bulk after the loop
+    # to avoid the overhead of pandas .loc scalar writes on every iteration.
+    N = masks.shape[0]
+    duplicate_arr = np.zeros(N, dtype=bool)
+    n_true_hits_arr = np.full(N, -1, dtype=np.int64)
+    n_matched_hits_arr = np.full(N, -1, dtype=np.int64)
+    parts_n_true_hits = parts["n_true_hits"].to_numpy()
+
+    for tid in order:
         mask_bytes = masks[tid, :].tobytes()
         if (mask_bytes in seen_masks) and (valid[tid]):
-            tracks_out.loc[tid, "duplicate"] = True
+            duplicate_arr[tid] = True
         else:
             seen_masks[mask_bytes] = tid
-        if not (valid[tid] and matched[tid]):  # check if a valid track is matched
-            continue  # continue if a valid track is matched
-        # for valid tracks that are not yet matched
-        pid = best_match_pid[tid]  # locate the particle that best matches with this track
-        if not taken[pid]:  # check whether this particle paired with a track
-            keep[tid] = True  # label this track to matched
-            taken[pid] = True  # label this particle as taken
-            tracks_out.loc[tid, "n_true_hits"] = parts.loc[pid, "n_true_hits"]
-            # number of predicted hits that match true hits (true positive hit), shape = (n_max_particles, )
-            tracks_out.loc[tid, "n_matched_hits"] = best_match_n[tid]
+        if not (valid[tid] and matched[tid]):
+            continue
+        pid = best_match_pid[tid]
+        if not taken[pid]:
+            keep[tid] = True
+            taken[pid] = True
+            n_true_hits_arr[tid] = parts_n_true_hits[pid]
+            n_matched_hits_arr[tid] = best_match_n[tid]
 
+    tracks_out["duplicate"] = duplicate_arr
+    tracks_out["n_true_hits"] = n_true_hits_arr
+    tracks_out["n_matched_hits"] = n_matched_hits_arr
     matched_pid = valid & matched & keep
     tracks_out["matched_pid"] = np.where(matched_pid, best_match_pid, -1)
     tracks_out = tracks_out[valid]  # Keep only valid tracks
@@ -474,6 +624,8 @@ def load_event(
     iou_threshold=0.0,
     track_valid_threshold=0.5,
     hit_order_mode="auto",
+    match_min_hits=0,
+    match_min_pt=None,
 ):
     """Load an event from an evaluation file and create a DataFrame.
 
@@ -500,6 +652,10 @@ def load_event(
     hit_order_mode: str
         One of {"auto", "as_saved", "unsort_preds", "sort_targets"}.
         "auto" uses file metadata when available and otherwise infers the best alignment.
+    match_min_hits: int
+        Minimum true hits for a truth particle to be eligible for matching.
+    match_min_pt: float, optional
+        Minimum pT [GeV] for a truth particle to be eligible for matching.
 
     Returns:
     --------
@@ -520,10 +676,11 @@ def load_event(
     masks, targets = get_masks(f, idx, tracks, parts, key_mode, hit_order_mode=hit_order_mode)
 
     # Perform track matching
-    tracks, valid = process_tracks(f, idx, tracks, parts, masks, targets, key_mode, iou_threshold, track_valid_threshold)
+    tracks, valid = process_tracks(f, idx, tracks, parts, masks, targets, key_mode, iou_threshold, track_valid_threshold, match_min_hits=match_min_hits, match_min_pt=match_min_pt)
 
     # Evaluate track match metrics
     eval_tracks(tracks, parts)
+    recover_out_of_acceptance_matches(f, idx, tracks, masks, key_mode=key_mode, hit_order_mode=hit_order_mode)
     matched_kinematics(tracks, parts, particle_targets)
     # Load regression values
     if regression:
@@ -539,10 +696,107 @@ def load_event(
     return tracks, parts
 
 
+def _resolve_event_id_list(f, index_list=None, randomize=None, random_seed=None):
+    if index_list is not None:
+        return [str(idx) for idx in index_list]
+
+    file_keys = list(f.keys())
+    if randomize is None:
+        return file_keys
+
+    if (randomize <= 0) or (not isinstance(randomize, int)):
+        raise ValueError("Only positive integer amounts allowed.")
+
+    if randomize >= len(file_keys):
+        if randomize > len(file_keys):
+            warnings.warn(f"Requested amount of events exceeds record. Using all {len(file_keys)} events.")
+        return file_keys
+
+    rng = np.random.default_rng(random_seed)
+    return [str(idx) for idx in rng.choice(file_keys, size=randomize, replace=False)]
+
+
+def _cache_signature(
+    *,
+    fname,
+    event_ids,
+    eta_cut,
+    pt_cut,
+    particle_targets,
+    regression,
+    key_mode,
+    iou_threshold,
+    track_valid_threshold,
+    hit_order_mode,
+    extra_options=None,
+):
+    extra_options = {} if extra_options is None else dict(extra_options)
+    return {
+        "fname": str(Path(fname).resolve()),
+        "event_ids": [str(idx) for idx in event_ids],
+        "eta_cut": float(eta_cut),
+        "pt_cut": float(pt_cut),
+        "particle_targets": list(particle_targets),
+        "regression": bool(regression),
+        "key_mode": key_mode,
+        "iou_threshold": float(iou_threshold),
+        "track_valid_threshold": float(track_valid_threshold),
+        "hit_order_mode": str(hit_order_mode),
+        "extra_options": extra_options,
+    }
+
+
+def _cache_base_path(cache_dir, cache_key, signature):
+    signature_blob = json.dumps(signature, sort_keys=True, separators=(",", ":"))
+    signature_hash = hashlib.sha1(signature_blob.encode("utf-8")).hexdigest()[:12]
+    stem = cache_key or f"{Path(signature['fname']).stem}_{signature_hash}"
+    return Path(cache_dir) / stem
+
+
+def _load_saved_events(cache_base, expected_signature):
+    meta_path = cache_base.with_name(cache_base.name + "_meta.json")
+    tracks_path = cache_base.with_name(cache_base.name + "_tracks.pkl")
+    parts_path = cache_base.with_name(cache_base.name + "_parts.pkl")
+    if not (meta_path.exists() and tracks_path.exists() and parts_path.exists()):
+        return None
+
+    with meta_path.open() as f:
+        saved_meta = json.load(f)
+    if saved_meta.get("signature") != expected_signature:
+        return None
+
+    tracks = pd.read_pickle(tracks_path)
+    parts = pd.read_pickle(parts_path)
+    return tracks, parts
+
+
+def _write_saved_events(cache_base, signature, tracks, parts):
+    cache_base.parent.mkdir(parents=True, exist_ok=True)
+    meta_path = cache_base.with_name(cache_base.name + "_meta.json")
+    tracks_path = cache_base.with_name(cache_base.name + "_tracks.pkl")
+    parts_path = cache_base.with_name(cache_base.name + "_parts.pkl")
+
+    tracks.to_pickle(tracks_path)
+    parts.to_pickle(parts_path)
+    with meta_path.open("w") as f:
+        json.dump({"signature": signature}, f, indent=2, sort_keys=True)
+
+
+def _load_event_worker(fname, idx, eta_cut, pt_cut, particle_targets, regression, key_mode, iou_threshold, track_valid_threshold, hit_order_mode, match_min_hits, match_min_pt):
+    """Open a fresh HDF5 handle and load a single event. Used by ThreadPoolExecutor for parallel loading."""
+    with h5py.File(fname, "r") as f:
+        return load_event(
+            f, idx, eta_cut, pt_cut, particle_targets, regression, key_mode,
+            iou_threshold, track_valid_threshold, hit_order_mode,
+            match_min_hits=match_min_hits, match_min_pt=match_min_pt,
+        )
+
+
 def load_events(
     fname,
     index_list=None,
     randomize=None,
+    random_seed=None,
     eta_cut=2.5,
     pt_cut=1,
     particle_targets=None,
@@ -551,8 +805,15 @@ def load_events(
     iou_threshold=0.0,
     track_valid_threshold=0.5,
     hit_order_mode="auto",
+    match_min_hits=0,
+    match_min_pt=None,
+    cache_dir=None,
+    cache_key=None,
+    reuse_saved=False,
+    write_cache=False,
+    n_workers=1,
 ):
-    """Sequentially load events from an evaluation file and aggregate into a single DataFrame.
+    """Load events from an evaluation file and aggregate into a single DataFrame.
 
     Arguments:
     ----------
@@ -562,6 +823,9 @@ def load_events(
         specify a list of indexes to load
     randomize: int
         specify the size for a random set of events from evaluation file
+    random_seed: int, optional
+        Seed used when drawing a randomized event subset. When set together with
+        caching, the same subset can be reused across runs.
     eta_cut: float
         Accepted pseudorapidity range
     pt_cut: float
@@ -579,6 +843,26 @@ def load_events(
     hit_order_mode: str
         One of {"auto", "as_saved", "unsort_preds", "sort_targets"}.
         "auto" uses file metadata when available and otherwise infers the best alignment.
+    match_min_hits: int
+        Minimum number of true hits for a truth particle to be eligible for matching.
+        Predicted tracks whose best match fails this cut are treated as unmatched.
+    match_min_pt: float, optional
+        Minimum pT [GeV] for a truth particle to be eligible for matching.
+        Predicted tracks whose best match fails this cut are treated as unmatched.
+    cache_dir: str or Path, optional
+        Directory holding saved `tracks`/`parts` DataFrames from previous runs.
+    cache_key: str, optional
+        Human-readable cache stem. When omitted, one is derived from the input file
+        name and evaluation settings.
+    reuse_saved: bool
+        If True, load saved `tracks`/`parts` from `cache_dir` when the cached
+        signature matches the current request.
+    write_cache: bool
+        If True, persist the computed `tracks`/`parts` so future runs can reuse them.
+    n_workers: int
+        Number of threads for parallel event loading (default: 1 = sequential).
+        Each worker opens its own HDF5 handle; requires a thread-safe HDF5 build
+        or a read-only file on a POSIX filesystem.
 
     Returns:
     --------
@@ -596,45 +880,67 @@ def load_events(
     if particle_targets is None:
         particle_targets = ["pt", "eta", "phi"]
 
+    # Resolve event IDs — requires a file handle only for key listing.
     with h5py.File(fname, "r") as f:
-        if index_list is not None:
-            # index list takes priority over randomized sample
-            id_list = index_list
-        elif randomize is not None:
-            if (randomize <= 0) or (not isinstance(randomize, int)):
-                raise ValueError("Only positive integer amounts allowed.")
+        id_list = _resolve_event_id_list(f, index_list=index_list, randomize=randomize, random_seed=random_seed)
 
-            if randomize >= len(f.keys()):
-                id_list = list(f.keys())
-                # if requested amount exceeds record, use all events sequentially
-                if randomize > len(f.keys()):
-                    warnings.warn(f"Requested amount of events exceeds record. Using all {len(f.keys())} events.")
-            else:
-                # generate a random list of indices
-                id_list = np.random.default_rng().choice(list(f.keys()), size=randomize, replace=False)
-        else:
-            id_list = list(f.keys())
+    signature = _cache_signature(
+        fname=fname,
+        event_ids=id_list,
+        eta_cut=eta_cut,
+        pt_cut=pt_cut,
+        particle_targets=particle_targets,
+        regression=regression,
+        key_mode=key_mode,
+        iou_threshold=iou_threshold,
+        track_valid_threshold=track_valid_threshold,
+        hit_order_mode=hit_order_mode,
+        extra_options={
+            "match_min_hits": int(match_min_hits),
+            "match_min_pt": float(match_min_pt) if match_min_pt is not None else None,
+        },
+    )
+    cache_base = _cache_base_path(cache_dir, cache_key, signature) if cache_dir is not None else None
+    if reuse_saved and cache_base is not None:
+        cached = _load_saved_events(cache_base, signature)
+        if cached is not None:
+            return cached
 
-        tracks_list = []
-        parts_list = []
+    tracks_list = []
+    parts_list = []
 
-        for idx in id_list:
-            tracks, parts = load_event(
-                f,
-                idx,
-                eta_cut,
-                pt_cut,
-                particle_targets,
-                regression,
-                key_mode,
-                iou_threshold,
-                track_valid_threshold,
-                hit_order_mode,
-            )
-            tracks_list.append(tracks)
-            parts_list.append(parts)
+    if n_workers > 1:
+        # Submit all events concurrently; each worker opens its own HDF5 handle.
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            futs = [
+                executor.submit(
+                    _load_event_worker,
+                    fname, idx, eta_cut, pt_cut, particle_targets, regression,
+                    key_mode, iou_threshold, track_valid_threshold, hit_order_mode,
+                    match_min_hits, match_min_pt,
+                )
+                for idx in id_list
+            ]
+        # Collect in submission order to preserve event ordering.
+        for fut in futs:
+            t, p = fut.result()
+            tracks_list.append(t)
+            parts_list.append(p)
+    else:
+        with h5py.File(fname, "r") as f:
+            for idx in id_list:
+                t, p = load_event(
+                    f, idx, eta_cut, pt_cut, particle_targets, regression,
+                    key_mode, iou_threshold, track_valid_threshold, hit_order_mode,
+                    match_min_hits=match_min_hits, match_min_pt=match_min_pt,
+                )
+                tracks_list.append(t)
+                parts_list.append(p)
 
-        tracks = pd.concat(tracks_list, ignore_index=True)
-        parts = pd.concat(parts_list, ignore_index=True)
+    tracks = pd.concat(tracks_list, ignore_index=True)
+    parts = pd.concat(parts_list, ignore_index=True)
+
+    if write_cache and cache_base is not None:
+        _write_saved_events(cache_base, signature, tracks, parts)
 
     return (tracks, parts)

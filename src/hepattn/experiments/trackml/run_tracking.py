@@ -1,7 +1,7 @@
 import comet_ml  # noqa: F401
 import torch
 from lightning.pytorch.cli import ArgsType
-from torch import nn
+from torch import Tensor, nn
 
 from hepattn.experiments.trackml.data import TrackMLDataModule
 from hepattn.models.wrapper import ModelWrapper
@@ -70,6 +70,29 @@ class TrackMLTracker(ModelWrapper):
         # True number of hits on the track
         hit_t = true_hit_masks.sum(-1)
 
+        if "track_iou" in preds and "query_iou" in preds["track_iou"]:
+            pred_iou = preds["track_iou"]["query_iou"].float()
+            true_iou = hit_tp.float() / (hit_p + hit_t - hit_tp).clamp_min(1).float()
+            quality_mask = pred_valid | true_valid
+
+            if query_mask is not None:
+                quality_mask = quality_mask & query_mask
+
+            if quality_mask.any().item():
+                pred_iou_valid = pred_iou[quality_mask]
+                true_iou_valid = true_iou[quality_mask]
+                mae = (pred_iou_valid - true_iou_valid).abs().mean()
+                rmse = torch.sqrt(torch.mean((pred_iou_valid - true_iou_valid) ** 2))
+
+                pred_centered = pred_iou_valid - pred_iou_valid.mean()
+                true_centered = true_iou_valid - true_iou_valid.mean()
+                corr_denom = torch.sqrt(pred_centered.square().sum() * true_centered.square().sum()).clamp_min(1e-6)
+                corr = (pred_centered * true_centered).sum() / corr_denom
+
+                self.log(f"{stage}/track_iou_mae", mae, sync_dist=True)
+                self.log(f"{stage}/track_iou_rmse", rmse, sync_dist=True)
+                self.log(f"{stage}/track_iou_corr", corr, sync_dist=True)
+
         # Calculate the efficiency and purity at differnt matching working points
         for wp in [0.5, 0.75, 1.0]:
             both_valid = true_valid & pred_valid
@@ -104,6 +127,20 @@ class TrackMLTracker(ModelWrapper):
         self.log(f"{stage}/num_hits", num_hits_total, sync_dist=True)
         self.log(f"{stage}/num_hits_valid", num_hits_valid, sync_dist=True)
         self.log(f"{stage}/num_hits_noise", num_hits_noise, sync_dist=True)
+
+    def test_step(
+        self, batch: tuple[dict[str, Tensor], dict[str, Tensor]]
+    ) -> tuple[dict[str, Tensor], dict[str, Tensor], dict[str, Tensor], dict[str, Tensor]]:
+        """TrackML override: include post-loss targets for prediction writing.
+
+        The post-loss targets are sorter-aligned when a sorter is configured, which keeps
+        saved targets and saved predictions on the same hit ordering in eval files.
+        """
+        inputs, targets = batch
+        outputs = self.model(inputs)
+        outputs, targets, losses = self.model.loss(outputs, targets)
+        preds = self.model.predict(outputs)
+        return outputs, preds, losses, targets
 
 
 def main(args: ArgsType = None) -> None:
