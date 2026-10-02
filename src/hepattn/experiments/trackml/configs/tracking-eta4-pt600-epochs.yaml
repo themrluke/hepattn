@@ -2,13 +2,13 @@ seed_everything: 42
 name: TRK-v8-eta4-pt600-epochs30
 data:
   # isambard
-  train_dir:  /share/rcif2/pduckett/data/prepped/train/
-  val_dir: /share/rcif2/pduckett/data/prepped/val/
-  test_dir: /share/rcif2/pduckett/data/prepped/test/
+  train_dir: /eos/user/l/ljohnson/datasets/TrackML_UCL/train/
+  val_dir: /eos/user/l/ljohnson/datasets/TrackML_UCL/val/
+  test_dir: /eos/user/l/ljohnson/datasets/TrackML_UCL/test/
 
-  hit_eval_train: /share/rcif2/pduckett/hepattn-dq/HF-pix-600MeV-eta4_20260214-T195401/epoch=070-val_loss=0.20153_train_eval.h5
-  hit_eval_val: /share/rcif2/pduckett/hepattn-dq/HF-pix-600MeV-eta4_20260214-T195401/epoch=070-val_loss=0.20153_val_eval.h5
-  hit_eval_test: /share/rcif2/pduckett/hepattn-dq/HF-pix-600MeV-eta4_20260214-T195401/epoch=070-val_loss=0.20153_test_eval.h5
+  hit_eval_train: /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_train_eval.h5
+  hit_eval_val: /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_val_eval.h5
+  hit_eval_test: /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_test_eval.h5
   hit_filter_threshold: 0.1
   
   num_workers: 10
