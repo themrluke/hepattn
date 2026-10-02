@@ -1,0 +1,7 @@
+{
+ "source": "Real Lightning training steps from the failed run's epoch-2 checkpoint (stepcheck2.py / stepcheck3.py, 2026-10-01). fp16 run uses a GradScaler with init_scale=64 so normal steps are not skipped.",
+ "events": ["1000", "1001", "1532 (corrupt)", "1002", "1000", "1001"],
+ "fp16": {"max_weight_change": [null, 4.01e-05, 0.0, 1.45e-05, 4.65e-06, 1.01e-06], "nan_momentum_frac": [0, 0, 0, 0, 0, 0], "loss": [0.3415, 0.3510, null, 0.3203, 0.2956, 0.2827]},
+ "bf16": {"max_weight_change": [null, 4.01e-05, 0.0, 0.0, 0.0, 0.0], "nan_momentum_frac": [0, 0, 1, 1, 1, 1], "loss": [0.3520, 0.3584, null, 0.3317, 0.3151, 0.2955]},
+ "grad_nan_frac_corrupt_event": 1.0
+}
