@@ -1,5 +1,5 @@
 seed_everything: 42
-name: TRK-v8-eta4-lca-3700-0p3-lw100-epochs30
+name: TRK-Pix0.6-DQLSCA-paper
 data:
   # isambard
   train_dir: /eos/user/l/ljohnson/datasets/TrackML_UCL/train/
@@ -31,7 +31,7 @@ data:
   particle_min_num_hits: 3
 
   # Maximum number of reconstructable particles allowed in an event
-  event_max_num_particles: &num_objects 3700
+  event_max_num_particles: &num_objects 3900
   strict_max_objects: false
 
   # Define which inputs will be available to the model
@@ -200,7 +200,7 @@ model:
         num_queries: *num_objects
         mask_attention: false
         local_strided_attn: true
-        window_size: 128
+        window_size: 64
         window_wrap: true
         block_size: 16
         use_query_masks: false
@@ -259,10 +259,10 @@ model:
                 dim: *dim
                 losses:
                   mask_dice: 2.0
-                  mask_focal: 100.0
+                  mask_focal: 25.0
                 costs:
                   mask_dice: 2.0
-                  mask_focal: 100.0
+                  mask_focal: 25.0
                 null_weight: 1.0
 
             - class_path: hepattn.models.task.IoUPredictionTask
