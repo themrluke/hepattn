@@ -276,6 +276,6 @@ model:
         init_args:
           default_solver: scipy
           adaptive_solver: true
-          n_jobs: *num_dec_layers
+          n_jobs: 4  # one process per matched layer (3 decoder layers + final); was *num_dec_layers = 3
           parallel_solver: true
           parallel_backend: process
