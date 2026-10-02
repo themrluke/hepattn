@@ -51,9 +51,9 @@ Source: `tracking-eta4-pt600-epochs.yaml` (DQ+MA) and `tracking-lca-eta4-600.yam
 | Encoder | 8 layers, window 512, φ-sorted, wrapped | 8, 512, `phi`, flash + wrap | same | ✅ |
 | Decoder layers | 3 | 3 | 3 | ✅ |
 | First-hit (query-init) threshold | 0.3 | 0.3 | 0.3 | ✅ |
-| **Max. queries / particles** | **3,900** | **4,000** | **3,700** | ❌ |
-| Loss weights | 0.1 valid + 2 dice + **25 focal** + quality + DQ | 0.1 / 2 / **100** | 0.1 / 2 / **100** | ❌ focal |
-| **LSCA window** | **64** | — | **128** | ❌ |
+| **Max. queries / particles** | **3,900** | ~~4,000~~ → **3,900** | ~~3,700~~ → **3,900** | ✅ set to paper |
+| Loss weights | 0.1 valid + 2 dice + **25 focal** + quality + DQ | 0.1 / 2 / ~~100~~ → **25** | 0.1 / 2 / ~~100~~ → **25** | ✅ set to paper |
+| **LSCA window** | **64** | — | ~~128~~ → **64** | ✅ set to paper |
 | Optimiser | Lion, 1e-5 → 5e-5 → 1e-5, wd 1e-5 | same | same | ✅ |
 | Warm-up fraction | not stated | `pct_start: 0.02` | `0.02` | ? |
 | Precision | bf16 | `bf16-mixed` | `bf16-mixed` | ✅ |
@@ -63,7 +63,10 @@ Source: `tracking-eta4-pt600-epochs.yaml` (DQ+MA) and `tracking-lca-eta4-600.yam
 
 Both config names hint the mismatches are deliberate UCL choices, not typos: `TRK-v8-eta4-lca-3700-0p3-lw100-epochs30` = 3,700 queries, threshold 0.3, loss weight 100.
 
-> [!question] Ask UCL before the long runs
+> [!success] Decided 2026-10-02: use the paper's values
+> Both configs now use 3,900 queries, focal weight 25 and (LSCA) window 64, committed on `trackml-pix1p0`. The matcher's `n_jobs` was also raised from 3 to 4 for speed (identical results). See [[Arm A DQ+MA training]].
+
+> [!question] Still worth asking UCL
 > 1. Focal weight 25 (paper) or 100 (both configs)?
 > 2. Max queries 3,900 (paper) or 4,000 / 3,700? With 3,700, the busiest events (up to ~3,600–3,900 particles) can be truncated
 > 3. LSCA window 64 (paper) or 128 (config)?

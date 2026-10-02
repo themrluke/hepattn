@@ -52,6 +52,24 @@ Future [[ColliderML vs TrackML#ColliderML|ColliderML]] studies start from 0 pile
 - So the old poor results most likely came from the **narrow event selection** (pixel barrel, |η| < 1, ≈ 4.2 hits per particle), not from a bug
 - About 1.2 of 73.5 particles per event were still missed. Not investigated
 
+> [!important] Where the extra hits actually come from: the strips, not η
+> `pu0.yaml` sets `sihit_volume_ids: null`, i.e. **every tracker volume: pixel, short strip and long strip**. Measured on 200 pu0 events (pT > 0.9 GeV, ≥ 3 hits):
+>
+> | Selection | Hits / particle | Particles / event | Hits / event |
+> |---|---|---|---|
+> | Old: pixel barrel only, \|η\| < 1 | 4.3 | 20 | 258 |
+> | Pixel barrel only, \|η\| < 2.5 | 4.7 | 50 | 695 |
+> | All pixel (barrel + endcaps), \|η\| < 2.5 | 4.8 | 53 | 772 |
+> | All tracker (pixel + strips), \|η\| < 1 | 11.4 | 30 | 1,271 |
+> | **New `pu0.yaml`: all tracker, \|η\| < 2.5** | **11.8** | **66** | **3,433** |
+>
+> In the new selection a particle has on average **3.9 pixel + 4.4 short-strip + 3.5 long-strip** hits. So:
+> - **Pixel-only stays at ≈ 4–5 hits per particle whatever the η range**: a track crosses a fixed number of pixel layers
+> - **Widening η adds particles** (20 → 53 per event), not hits per particle
+> - **Adding the strips is what takes it to ≈ 12**
+>
+> ColliderML volumes: pixel 16 / **17 (barrel)** / 18 (r 32–174 mm); short strip 23 / 24 / 25 (r 240–702 mm); long strip 28 / 29 / 30 (r 811–1031 mm). The deck's "widened to the whole tracker out to |η| < 2.5" is literally true but credits the wrong change.
+
 ## TrackML
 
 > [!warning] Superseded on 2026-10-02

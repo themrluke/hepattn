@@ -43,7 +43,7 @@ Four arms:
 - [x] Paper code merged and tested ([[Upstream code audit]])
 - [x] Hit filter: UCL's 600 MeV filter outputs, checked against the paper ([[TrackML UCL data and cuts]])
 - [x] Switched to **Pix0.6** (pT > 0.6 GeV) on UCL's data; configs pointed at it, 5-step test passes
-- [ ] Confirm the config/paper mismatches with UCL (focal weight, max queries, LSCA window)
-- [ ] Arm A: DQ+MA baseline reproduces **98.0%** (Pix0.6)
+- [x] Config/paper mismatches: set to the paper's values (focal 25, 3,900 queries, LSCA window 64)
+- [ ] Arm A: DQ+MA baseline reproduces **98.0%** (Pix0.6): training since 2 Oct, see [[Arm A DQ+MA training]]
 - [ ] Arms B, C, D
 - [ ] Repeat for LSCA and FQ+MA
