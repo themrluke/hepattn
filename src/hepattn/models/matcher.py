@@ -18,6 +18,10 @@ _POOL_LOCK = Lock()
 _THREAD_POOLS: dict[int, ThreadPool] = {}
 _PROCESS_POOLS = {}
 
+# Shared-memory buffer reused across matcher calls (parent side), and each worker's handle to it
+_SHM_BUFFER: shared_memory.SharedMemory | None = None
+_WORKER_SHM: shared_memory.SharedMemory | None = None
+
 
 def _get_thread_pool(n_jobs: int) -> ThreadPool:
     with _POOL_LOCK:
@@ -48,6 +52,14 @@ def _close_pools() -> None:
             pool.join()
         except Exception:  # noqa: BLE001, S110
             pass
+
+    global _SHM_BUFFER  # noqa: PLW0603
+    if _SHM_BUFFER is not None:
+        with contextlib.suppress(Exception):
+            _SHM_BUFFER.close()
+        with contextlib.suppress(Exception):
+            _SHM_BUFFER.unlink()
+        _SHM_BUFFER = None
 
     for pool in list(_PROCESS_POOLS.values()):
         try:
@@ -172,6 +184,106 @@ def match_multiprocess(
                 shm.unlink()
 
 
+def _get_shm_buffer(nbytes: int) -> shared_memory.SharedMemory:
+    """Return the persistent shared-memory buffer, growing it if it is too small."""
+    global _SHM_BUFFER  # noqa: PLW0603
+    with _POOL_LOCK:
+        if _SHM_BUFFER is None or _SHM_BUFFER.size < nbytes:
+            if _SHM_BUFFER is not None:
+                _SHM_BUFFER.close()
+                with contextlib.suppress(FileNotFoundError):
+                    _SHM_BUFFER.unlink()
+            _SHM_BUFFER = shared_memory.SharedMemory(create=True, size=nbytes)
+        return _SHM_BUFFER
+
+
+def _mp_match_task_persistent(args: tuple[str, str, tuple[int, int, int], int, int, int]) -> np.ndarray:
+    """Like _mp_match_task, but the worker keeps its handle to the buffer between calls.
+
+    The buffer may hold only the first `width` query columns (shape[2] < pred_dim); the queries beyond
+    them are then appended, in order, after the solver's output.
+    """
+    global _WORKER_SHM  # noqa: PLW0603
+    solver_name, shm_name, shape, i, length, pred_dim = args
+    if _WORKER_SHM is None or _WORKER_SHM.name != shm_name:
+        if _WORKER_SHM is not None:
+            _WORKER_SHM.close()
+        _WORKER_SHM = shared_memory.SharedMemory(name=shm_name)
+    costs_t = np.ndarray(shape, dtype=np.float32, buffer=_WORKER_SHM.buf)
+    width = shape[2]
+    default_idx = np.arange(width, dtype=np.int32)
+    cost = costs_t[i][:length]
+    pred_idx = match_individual(SOLVERS[solver_name], cost, default_idx)
+    if width < pred_dim:
+        pred_idx = np.concatenate([pred_idx, np.arange(width, pred_dim, dtype=np.int32)])
+    return pred_idx
+
+
+def _valid_query_width(query_valid_mask: torch.Tensor, lengths_np: np.ndarray, pred_dim: int) -> int:
+    """Number of leading query columns the solver needs, or pred_dim if the queries can't be trimmed.
+
+    Trimming is only possible when every row's valid queries come first (true for dynamic queries).
+    The width never drops below the number of targets, so the problem stays solvable.
+    """
+    counts = query_valid_mask.sum(dim=1)
+    positions = torch.arange(pred_dim, device=query_valid_mask.device)
+    if not torch.equal(query_valid_mask, positions.unsqueeze(0) < counts.unsqueeze(1)):
+        return pred_dim
+    return min(max(int(counts.max()), int(lengths_np.max(initial=0))), pred_dim)
+
+
+def match_multiprocess_prepared(
+    solver_name: str,
+    costs: torch.Tensor,
+    lengths_np: np.ndarray,
+    query_valid_mask: torch.Tensor | None = None,
+    n_jobs: int = 8,
+    trim_padded_queries: bool = False,
+) -> torch.Tensor:
+    """Multiprocess matching with the masking, transpose and slicing done on the costs' device.
+
+    Gives the same indices as compute_matching + match_multiprocess, but the costs are copied off the
+    device once, straight into a shared-memory buffer that is reused between calls.
+
+    With trim_padded_queries, the padded query columns are dropped before solving. Every target is
+    matched to the same query as without trimming, but lap1015 may order the unmatched queries
+    differently: padded queries always come last, in their original slots.
+
+    Raises:
+        ValueError: If solver_name is not in the available SOLVERS.
+    """
+    if solver_name not in SOLVERS:
+        raise ValueError(f"Unknown solver: {solver_name}. Available solvers: {list(SOLVERS.keys())}")
+
+    costs = costs.detach().to(torch.float32)
+    batch_size, pred_dim, num_target = costs.shape
+    width = pred_dim
+
+    # Padded queries get a high cost so they won't be matched to valid targets
+    if query_valid_mask is not None:
+        query_valid_mask = query_valid_mask.detach().bool().to(costs.device)
+        costs = costs.masked_fill(~query_valid_mask.unsqueeze(-1), float(np.finfo(np.float32).max / 10))
+        if trim_padded_queries:
+            width = _valid_query_width(query_valid_mask, lengths_np, pred_dim)
+
+    # [batch, pred, true] -> [batch, true, pred], keeping only the target rows and query columns the solver reads
+    max_len = min(int(lengths_np.max(initial=0)), num_target)
+    costs_t = costs[:, :width].transpose(1, 2)[:, :max_len].contiguous()
+
+    shape = (batch_size, max_len, width)
+    nbytes = max(costs_t.numel() * costs_t.element_size(), 1)
+    shm = _get_shm_buffer(nbytes)
+    shm_arr = np.ndarray(shape, dtype=np.float32, buffer=shm.buf)
+    torch.from_numpy(shm_arr).copy_(costs_t)
+
+    n_jobs = min(n_jobs, batch_size)
+    chunk_size = (batch_size + n_jobs - 1) // n_jobs
+    tasks = [(solver_name, shm.name, shape, i, int(lengths_np[i]), pred_dim) for i in range(batch_size)]
+    pool = _get_process_pool(n_jobs)
+    results = pool.map(_mp_match_task_persistent, tasks, chunksize=chunk_size)
+    return torch.from_numpy(np.stack(results, axis=0))
+
+
 class Matcher(nn.Module):
     def __init__(
         self,
@@ -181,6 +293,8 @@ class Matcher(nn.Module):
         parallel_solver: bool = False,
         parallel_backend: Literal["thread", "process"] = "thread",
         n_jobs: int = 8,
+        prepare_on_device: bool = False,
+        trim_padded_queries: bool = False,
         verbose: bool = False,
     ):
         super().__init__()
@@ -202,6 +316,14 @@ class Matcher(nn.Module):
             Parallel backend when parallel_solver is True. One of: 'thread', 'process'.
         n_jobs: int
             Number of jobs to use for parallel matching. Only used if parallel_solver is True.
+        prepare_on_device : bool
+            If true (process backend only), the costs are masked, transposed and sliced on their own
+            device (usually the GPU) and copied once into a reused shared-memory buffer, instead of
+            being copied and reshuffled on the CPU. The matching is identical; only the copying changes.
+        trim_padded_queries : bool
+            If true (needs prepare_on_device), padded query columns are dropped before solving, which makes
+            the solve faster. Every target gets the same query, but with lap1015 the unmatched queries can
+            come back in a different order (padded ones always last), so results are not bit-identical.
         verbose : bool
             If true, extra information on solver timing is printed.
         """
@@ -215,6 +337,10 @@ class Matcher(nn.Module):
         self.parallel_solver = parallel_solver
         self.parallel_backend = parallel_backend
         self.n_jobs = n_jobs
+        self.prepare_on_device = prepare_on_device
+        self.trim_padded_queries = trim_padded_queries
+        if trim_padded_queries and not (prepare_on_device and parallel_solver and parallel_backend == "process"):
+            raise ValueError("trim_padded_queries needs prepare_on_device=True, parallel_solver=True and parallel_backend='process'")
         self.step = 0
         self.verbose = verbose
 
@@ -259,6 +385,20 @@ class Matcher(nn.Module):
     @torch.no_grad()
     def forward(self, costs, object_valid_mask=None, query_valid_mask=None):
         # Convert costs to numpy on CPU for solver compatibility
+        if self.prepare_on_device and self.parallel_solver and self.parallel_backend == "process":
+            if self.adaptive_solver and self.step % self.adaptive_check_interval == 0:
+                self.adapt_solver(costs.detach().to(torch.float32).cpu().numpy())
+            if object_valid_mask is None:
+                lengths_np = np.full(costs.shape[0], costs.shape[1], dtype=np.int32)
+            else:
+                lengths_np = object_valid_mask.detach().bool().sum(dim=1).cpu().numpy().astype(np.int32, copy=False)
+            pred_idxs = match_multiprocess_prepared(
+                self.solver, costs, lengths_np, query_valid_mask, n_jobs=self.n_jobs, trim_padded_queries=self.trim_padded_queries
+            )
+            self.step += 1
+            assert torch.all(pred_idxs >= 0), "Matcher error!"
+            return pred_idxs
+
         costs = costs.detach().to(torch.float32).cpu().numpy()
 
         if self.adaptive_solver and self.step % self.adaptive_check_interval == 0:
