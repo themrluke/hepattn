@@ -1,0 +1,44 @@
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/lightning/pytorch/cli.py:544: LightningCLI's args parameter is intended to run from within Python like if it were from the command line. To prevent mistakes it is not recommended to provide both args and command line arguments, got: sys.argv[1:]=['/shared/projects/hepattn/src/hepattn/experiments/trackml/logs/TRK-Pix0.6-DQMA-paper_20261002-T123110/ckpts/epoch=029-val_loss=0.29318.ckpt', '3', 'flex.yaml:fp32', 'flex.yaml', 'flash.yaml'], args=['--config', 'flex.yaml'].
+Seed set to 42
+Using bfloat16 Automatic Mixed Precision (AMP)
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+Using hit eval dataset /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_train_eval.h5
+Using hit eval dataset /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_val_eval.h5
+Created training dataset with 8,543 events
+Created validation dataset with 100 events
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/torch/_inductor/compile_fx.py:312: UserWarning: TensorFloat32 tensor cores for float32 matrix multiplication available but not enabled. Consider setting `torch.set_float32_matmul_precision('high')` for better performance.
+  warnings.warn(
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/lightning/pytorch/cli.py:544: LightningCLI's args parameter is intended to run from within Python like if it were from the command line. To prevent mistakes it is not recommended to provide both args and command line arguments, got: sys.argv[1:]=['/shared/projects/hepattn/src/hepattn/experiments/trackml/logs/TRK-Pix0.6-DQMA-paper_20261002-T123110/ckpts/epoch=029-val_loss=0.29318.ckpt', '3', 'flex.yaml:fp32', 'flex.yaml', 'flash.yaml'], args=['--config', 'flex.yaml'].
+Seed set to 42
+Using bfloat16 Automatic Mixed Precision (AMP)
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+Using hit eval dataset /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_train_eval.h5
+Using hit eval dataset /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_val_eval.h5
+Created training dataset with 8,543 events
+Created validation dataset with 100 events
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/lightning/pytorch/cli.py:544: LightningCLI's args parameter is intended to run from within Python like if it were from the command line. To prevent mistakes it is not recommended to provide both args and command line arguments, got: sys.argv[1:]=['/shared/projects/hepattn/src/hepattn/experiments/trackml/logs/TRK-Pix0.6-DQMA-paper_20261002-T123110/ckpts/epoch=029-val_loss=0.29318.ckpt', '3', 'flex.yaml:fp32', 'flex.yaml', 'flash.yaml'], args=['--config', 'flash.yaml'].
+Seed set to 42
+Using bfloat16 Automatic Mixed Precision (AMP)
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+Using hit eval dataset /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_train_eval.h5
+Using hit eval dataset /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_val_eval.h5
+Created training dataset with 8,543 events
+Created validation dataset with 100 events
+event  0: encoder output rel. diff flex.yaml:fp32 vs flex.yaml: 1.09e-01   loss 0.3668 vs 0.3769
+event  1: encoder output rel. diff flex.yaml:fp32 vs flex.yaml: 1.08e-01   loss 0.2873 vs 0.2919
+event  2: encoder output rel. diff flex.yaml:fp32 vs flex.yaml: 1.06e-01   loss 0.3254 vs 0.3164
+rel. diff per hit along the phi-sorted sequence, 20 bins (seam at both ends):
+  0.106 0.109 0.108 0.104 0.113 0.095 0.089 0.089 0.084 0.085 0.084 0.105 0.099 0.104 0.105 0.108 0.104 0.109 0.113 0.108
+mean loss over 3 events: flex.yaml:fp32 0.3265   flex.yaml 0.3284
+event  0: encoder output rel. diff flex.yaml:fp32 vs flash.yaml: 1.09e-01   loss 0.3668 vs 0.3782
+event  1: encoder output rel. diff flex.yaml:fp32 vs flash.yaml: 1.07e-01   loss 0.2873 vs 0.2879
+event  2: encoder output rel. diff flex.yaml:fp32 vs flash.yaml: 1.06e-01   loss 0.3254 vs 0.3191
+rel. diff per hit along the phi-sorted sequence, 20 bins (seam at both ends):
+  0.107 0.108 0.107 0.104 0.112 0.096 0.089 0.089 0.083 0.086 0.085 0.106 0.098 0.104 0.103 0.107 0.103 0.110 0.111 0.107
+mean loss over 3 events: flex.yaml:fp32 0.3265   flash.yaml 0.3284

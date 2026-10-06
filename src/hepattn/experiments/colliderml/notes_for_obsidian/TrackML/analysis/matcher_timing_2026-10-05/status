@@ -1,0 +1,19 @@
+11:11 capture late exit=0
+11:12 capture early exit=0
+11:21 late original rep1 exit=0
+11:25 late prep rep1 exit=0
+11:28 late trim rep1 exit=0
+11:36 late original rep2 exit=0
+11:40 late prep rep2 exit=0
+11:44 late trim rep2 exit=0
+11:55 early original rep1 exit=0
+12:01 early prep rep1 exit=0
+12:06 early trim rep1 exit=0
+ALLDONE
+14:03 early original rep2 exit=0
+14:10 early prep rep2 exit=0
+14:15 early trim rep2 exit=0
+14:23 late original rep3 exit=0
+14:27 late prep rep3 exit=0
+14:31 late trim rep3 exit=0
+ALLDONE2

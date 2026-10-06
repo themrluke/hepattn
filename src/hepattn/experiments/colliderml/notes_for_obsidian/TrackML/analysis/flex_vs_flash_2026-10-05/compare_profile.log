@@ -1,0 +1,28 @@
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/lightning/pytorch/cli.py:544: LightningCLI's args parameter is intended to run from within Python like if it were from the command line. To prevent mistakes it is not recommended to provide both args and command line arguments, got: sys.argv[1:]=['/shared/projects/hepattn/src/hepattn/experiments/trackml/logs/TRK-Pix0.6-DQMA-paper_20261002-T123110/ckpts/epoch=029-val_loss=0.29318.ckpt', '5', 'flash.yaml', 'flex.yaml'], args=['--config', 'flash.yaml'].
+Seed set to 42
+Using bfloat16 Automatic Mixed Precision (AMP)
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+Using hit eval dataset /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_train_eval.h5
+Using hit eval dataset /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_val_eval.h5
+Created training dataset with 8,543 events
+Created validation dataset with 100 events
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/lightning/pytorch/cli.py:544: LightningCLI's args parameter is intended to run from within Python like if it were from the command line. To prevent mistakes it is not recommended to provide both args and command line arguments, got: sys.argv[1:]=['/shared/projects/hepattn/src/hepattn/experiments/trackml/logs/TRK-Pix0.6-DQMA-paper_20261002-T123110/ckpts/epoch=029-val_loss=0.29318.ckpt', '5', 'flash.yaml', 'flex.yaml'], args=['--config', 'flex.yaml'].
+Seed set to 42
+Using bfloat16 Automatic Mixed Precision (AMP)
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+Using hit eval dataset /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_train_eval.h5
+Using hit eval dataset /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_val_eval.h5
+Created training dataset with 8,543 events
+Created validation dataset with 100 events
+event  0: encoder output rel. diff flash.yaml vs flex.yaml: 6.18e-02   loss 0.3782 vs 0.3769
+event  1: encoder output rel. diff flash.yaml vs flex.yaml: 6.02e-02   loss 0.2879 vs 0.2919
+event  2: encoder output rel. diff flash.yaml vs flex.yaml: 6.05e-02   loss 0.3191 vs 0.3164
+event  3: encoder output rel. diff flash.yaml vs flex.yaml: 6.13e-02   loss 0.3481 vs 0.3537
+event  4: encoder output rel. diff flash.yaml vs flex.yaml: 5.91e-02   loss 0.3221 vs 0.3257
+rel. diff per hit along the phi-sorted sequence, 20 bins (seam at both ends):
+  0.057 0.060 0.059 0.057 0.055 0.054 0.053 0.057 0.048 0.050 0.050 0.057 0.054 0.054 0.055 0.055 0.057 0.059 0.062 0.057
+mean loss over 5 events: flash.yaml 0.3311   flex.yaml 0.3329

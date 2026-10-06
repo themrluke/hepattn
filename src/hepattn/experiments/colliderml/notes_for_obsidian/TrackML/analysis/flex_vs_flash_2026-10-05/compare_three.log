@@ -1,0 +1,42 @@
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/lightning/pytorch/cli.py:544: LightningCLI's args parameter is intended to run from within Python like if it were from the command line. To prevent mistakes it is not recommended to provide both args and command line arguments, got: sys.argv[1:]=['/shared/projects/hepattn/src/hepattn/experiments/trackml/logs/TRK-Pix0.6-DQMA-paper_20261002-T123110/ckpts/epoch=029-val_loss=0.29318.ckpt', '3', 'flex.yaml', 'torch.yaml', 'flash.yaml'], args=['--config', 'flex.yaml'].
+Seed set to 42
+Using bfloat16 Automatic Mixed Precision (AMP)
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+Using hit eval dataset /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_train_eval.h5
+Using hit eval dataset /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_val_eval.h5
+Created training dataset with 8,543 events
+Created validation dataset with 100 events
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/lightning/pytorch/cli.py:544: LightningCLI's args parameter is intended to run from within Python like if it were from the command line. To prevent mistakes it is not recommended to provide both args and command line arguments, got: sys.argv[1:]=['/shared/projects/hepattn/src/hepattn/experiments/trackml/logs/TRK-Pix0.6-DQMA-paper_20261002-T123110/ckpts/epoch=029-val_loss=0.29318.ckpt', '3', 'flex.yaml', 'torch.yaml', 'flash.yaml'], args=['--config', 'torch.yaml'].
+Seed set to 42
+Using bfloat16 Automatic Mixed Precision (AMP)
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+Using hit eval dataset /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_train_eval.h5
+Using hit eval dataset /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_val_eval.h5
+Created training dataset with 8,543 events
+Created validation dataset with 100 events
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/lightning/pytorch/cli.py:544: LightningCLI's args parameter is intended to run from within Python like if it were from the command line. To prevent mistakes it is not recommended to provide both args and command line arguments, got: sys.argv[1:]=['/shared/projects/hepattn/src/hepattn/experiments/trackml/logs/TRK-Pix0.6-DQMA-paper_20261002-T123110/ckpts/epoch=029-val_loss=0.29318.ckpt', '3', 'flex.yaml', 'torch.yaml', 'flash.yaml'], args=['--config', 'flash.yaml'].
+Seed set to 42
+Using bfloat16 Automatic Mixed Precision (AMP)
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+Using hit eval dataset /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_train_eval.h5
+Using hit eval dataset /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_val_eval.h5
+Created training dataset with 8,543 events
+Created validation dataset with 100 events
+event  0: encoder output rel. diff flex.yaml vs torch.yaml: 7.85e-01   loss 0.3769 vs 6.9568
+event  1: encoder output rel. diff flex.yaml vs torch.yaml: 7.83e-01   loss 0.2919 vs 6.5741
+event  2: encoder output rel. diff flex.yaml vs torch.yaml: 7.82e-01   loss 0.3164 vs 6.8864
+rel. diff per hit along the phi-sorted sequence, 20 bins (seam at both ends):
+  0.764 0.743 0.758 0.800 0.847 0.874 0.918 0.875 0.880 0.978 0.856 0.926 0.860 0.905 0.852 0.843 0.794 0.780 0.764 0.758
+mean loss over 3 events: flex.yaml 0.3284   torch.yaml 6.8058
+event  0: encoder output rel. diff flex.yaml vs flash.yaml: 6.18e-02   loss 0.3769 vs 0.3782
+event  1: encoder output rel. diff flex.yaml vs flash.yaml: 6.02e-02   loss 0.2919 vs 0.2879
+event  2: encoder output rel. diff flex.yaml vs flash.yaml: 6.05e-02   loss 0.3164 vs 0.3191
+rel. diff per hit along the phi-sorted sequence, 20 bins (seam at both ends):
+  0.058 0.060 0.060 0.057 0.056 0.054 0.054 0.057 0.049 0.049 0.050 0.058 0.056 0.055 0.056 0.055 0.057 0.059 0.061 0.058
+mean loss over 3 events: flex.yaml 0.3284   flash.yaml 0.3284
