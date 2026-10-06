@@ -1,0 +1,5 @@
+# runtime state written by queue.sh / watch_exits.sh
+queue.log
+queue.out
+running.pids
+finished.txt
