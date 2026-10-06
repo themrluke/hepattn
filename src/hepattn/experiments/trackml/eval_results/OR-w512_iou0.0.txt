@@ -1,0 +1,3 @@
+run                          pT cut events particles  DM eff perfect   fake dup (DM)
+OR-w512 iou0.0                  1.0    100    110684   97.9%   93.6%   1.1%     0.1%
+OR-w512 iou0.0                  0.6    100    260672   96.6%   91.9%   1.1%     0.1%

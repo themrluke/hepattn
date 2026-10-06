@@ -1,0 +1,19 @@
+                           model distance to phi seam [rad]  particles     DM  perfect
+Paper reproduction (flash, w512)                  0.00-0.05       1742 0.9656   0.9150
+Paper reproduction (flash, w512)                  0.05-0.10       1824 0.9693   0.9348
+Paper reproduction (flash, w512)                  0.10-0.20       3650 0.9721   0.9351
+Paper reproduction (flash, w512)                  0.20-0.50      10565 0.9792   0.9464
+Paper reproduction (flash, w512)                  0.50-3.14      92903 0.9777   0.9482
+Paper reproduction (flash, w512)      pT >= 6 GeV (all phi)       1411 0.9554   0.8937
+                 A′ (flex, w512)                  0.00-0.05       1742 0.9650   0.8984
+                 A′ (flex, w512)                  0.05-0.10       1824 0.9660   0.9167
+                 A′ (flex, w512)                  0.10-0.20       3650 0.9715   0.9233
+                 A′ (flex, w512)                  0.20-0.50      10565 0.9776   0.9263
+                 A′ (flex, w512)                  0.50-3.14      92903 0.9758   0.9315
+                 A′ (flex, w512)      pT >= 6 GeV (all phi)       1411 0.9504   0.8568
+                    D (OR, w512)                  0.00-0.05       1742 0.9501   0.8817
+                    D (OR, w512)                  0.05-0.10       1824 0.9677   0.9260
+                    D (OR, w512)                  0.10-0.20       3650 0.9726   0.9282
+                    D (OR, w512)                  0.20-0.50      10565 0.9760   0.9322
+                    D (OR, w512)                  0.50-3.14      92903 0.9753   0.9359
+                    D (OR, w512)      pT >= 6 GeV (all phi)       1411 0.9305   0.8462
