@@ -23,6 +23,7 @@ class MaskFormer(nn.Module):
         unified_decoding: bool = False,
         dynamic_query_source: str = "hit",
         encoder_tasks: nn.ModuleList | None = None,
+        trim_target_costs: bool = False,
     ):
         """Initializes the MaskFormer model, which is a modular transformer-style architecture designed
         for multi-task object reconstruction with attention-based decoding and optional encoder blocks.
@@ -41,6 +42,8 @@ class MaskFormer(nn.Module):
             unified_decoding: If True, inputs remain merged for task processing instead of being unmerged after encoding.
             dynamic_query_source: Name of the input type to use as the source for dynamic query initialization (default: "hit").
             encoder_tasks: Optional list of tasks to run after the encoder (before decoder). These tasks operate on post-encoder features.
+            trim_target_costs: If True, the matching costs are computed only for the real target objects (which come first),
+                not for the padding up to num_queries, which the matcher never reads. Losses still use every slot.
         """
         super().__init__()
 
@@ -58,6 +61,7 @@ class MaskFormer(nn.Module):
         self.decoder.unified_decoding = unified_decoding
         self.dynamic_query_source = dynamic_query_source
         self.decoder.dynamic_query_source = dynamic_query_source
+        self.trim_target_costs = trim_target_costs
 
         assert not (input_sort_field and sorter), "Cannot specify both input_sort_field and sorter."
         # The per-head mask is defined over token index, so hits only have useful neighbours once
@@ -88,6 +92,22 @@ class MaskFormer(nn.Module):
     def matches_during_forward(self) -> bool:
         """True if forward should be given the targets, so it can start matching each decoder layer early."""
         return self.matcher is not None and getattr(self.matcher, "overlap_layers", False) and self.sorter is None
+
+    def _cost_targets(self, targets: dict[str, Tensor]) -> dict[str, Tensor]:
+        """The targets the matching costs are computed from: with trim_target_costs, the target objects cut to the
+        real ones (they come first, as the matcher assumes), so the cost matrices are (batch, pred, real) instead of
+        (batch, pred, num_targets). Reading the count waits for the targets to reach the device.
+        """
+        if not self.trim_target_costs:
+            return targets
+        valid = targets[f"{self.target_object}_valid"]
+        num_target = valid.shape[1]
+        num_real = max(int(valid.sum(dim=1).max()), 1)
+        prefix = f"{self.target_object}_"
+        return {
+            k: v[:, :num_real] if k.startswith(prefix) and torch.is_tensor(v) and v.dim() >= 2 and v.shape[1] == num_target else v
+            for k, v in targets.items()
+        }
 
     @torch.compiler.disable
     def _layer_outputs_ready(self, layer_name: str, outputs: dict) -> None:
@@ -207,9 +227,10 @@ class MaskFormer(nn.Module):
         # Start matching each decoder layer as soon as its outputs exist (overlap_layers)
         self._layerwise = None
         if targets is not None and self.matches_during_forward:
-            matching = self.matcher.start_layerwise(targets[f"{self.target_object}_valid"], num_slots=len(self.decoder.decoder_layers) + 1)
+            cost_targets = self._cost_targets(targets)
+            matching = self.matcher.start_layerwise(cost_targets[f"{self.target_object}_valid"], num_slots=len(self.decoder.decoder_layers) + 1)
             if matching is not None:
-                self._layerwise = (matching, [], targets)
+                self._layerwise = (matching, [], cost_targets)
 
         # Pass through decoder layers
         x, decoder_outputs = self.decoder(x, self.input_names)
@@ -336,7 +357,8 @@ class MaskFormer(nn.Module):
         Returns:
             Dictionary of costs keyed by layer name. Cost axes are (batch, pred, true).
         """
-        return {layer_name: self._layer_cost(layer_outputs, targets) for layer_name, layer_outputs in decoder_outputs.items()}
+        cost_targets = self._cost_targets(targets)
+        return {layer_name: self._layer_cost(layer_outputs, cost_targets) for layer_name, layer_outputs in decoder_outputs.items()}
 
     def _layer_cost(self, layer_outputs: dict, targets: dict) -> Tensor | None:
         """Cost matrix (batch, pred, true) of one decoder layer, or None if no task contributes to it."""
@@ -393,7 +415,8 @@ class MaskFormer(nn.Module):
             stacked_costs = stacked_costs.reshape(num_layers * batch_size, num_pred, num_target)
 
             # Expand validity mask to match stacked batch dimension: [num_layers * batch, num_target]
-            target_valid = targets[f"{self.target_object}_valid"]
+            # (num_target is the number of real targets with trim_target_costs; they come first)
+            target_valid = targets[f"{self.target_object}_valid"][:, :num_target]
             stacked_target_valid = target_valid.unsqueeze(0).expand(num_layers, -1, -1).reshape(num_layers * batch_size, -1)
 
             # Get query_mask if present (for masking padded queries in matching)
