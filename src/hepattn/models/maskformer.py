@@ -70,6 +70,12 @@ class MaskFormer(nn.Module):
         if self.sorter is not None:
             self.sorter.input_names = self.input_names
 
+        # Layerwise matching state of the current forward pass, and the decoder hook that feeds it. The hook is
+        # set once, so the compiled decoder sees the same function every step and doesn't recompile.
+        self._layerwise = None
+        if self.matches_during_forward:
+            self.decoder.layer_outputs_hook = self._layer_outputs_ready
+
         assert "key" not in self.input_names, "'key' input name is reserved."
         assert "query" not in self.input_names, "'query' input name is reserved."
         assert not any("_" in name for name in self.input_names), "Input names cannot contain underscores."
@@ -78,7 +84,38 @@ class MaskFormer(nn.Module):
     def input_names(self) -> list[str]:
         return [input_net.input_name for input_net in self.input_nets]
 
-    def forward(self, inputs: dict[str, Tensor]) -> dict[str, dict[str, dict[str, Tensor]]]:
+    @property
+    def matches_during_forward(self) -> bool:
+        """True if forward should be given the targets, so it can start matching each decoder layer early."""
+        return self.matcher is not None and getattr(self.matcher, "overlap_layers", False) and self.sorter is None
+
+    @torch.compiler.disable
+    def _layer_outputs_ready(self, layer_name: str, outputs: dict) -> None:
+        """Decoder hook: once a layer's outputs exist, compute its costs and hand them to the matcher.
+
+        Does nothing unless forward was given targets and started a layerwise matching. Never compiled, so
+        the costs are computed exactly as in loss() (which runs outside the compiled encoder and decoder).
+        """
+        if self._layerwise is None:
+            return
+        matching, layer_names, targets = self._layerwise
+        query_mask = outputs.get("encoder", {}).get("query_mask")
+        # Same targets as _prepare_targets_and_outputs gives the costs in loss()
+        if query_mask is not None and "query_mask" not in targets:
+            targets = {**targets, "query_mask": query_mask}
+        cost = self._layer_cost(outputs[layer_name], targets)
+        if cost is None:
+            return
+        matching.submit(len(layer_names), cost, targets.get("query_mask"))
+        layer_names.append(layer_name)
+
+    def forward(self, inputs: dict[str, Tensor], targets: dict[str, Tensor] | None = None) -> dict[str, dict[str, dict[str, Tensor]]]:
+        """Run the model. With targets and a matcher with overlap_layers, the matching of each decoder layer
+        starts as soon as its outputs exist; loss() then collects it instead of matching from scratch.
+
+        Raises:
+            ValueError: If dynamic queries are used with a sorter or without their source input.
+        """
         batch_size = inputs[self.input_names[0] + "_valid"].shape[0]
         x = {"inputs": inputs}
 
@@ -167,6 +204,13 @@ class MaskFormer(nn.Module):
         for task in self.encoder_tasks:
             outputs["encoder"][task.name] = task(x, outputs=outputs["encoder"])
 
+        # Start matching each decoder layer as soon as its outputs exist (overlap_layers)
+        self._layerwise = None
+        if targets is not None and self.matches_during_forward:
+            matching = self.matcher.start_layerwise(targets[f"{self.target_object}_valid"], num_slots=len(self.decoder.decoder_layers) + 1)
+            if matching is not None:
+                self._layerwise = (matching, [], targets)
+
         # Pass through decoder layers
         x, decoder_outputs = self.decoder(x, self.input_names)
         outputs["encoder"].update(decoder_outputs.pop("encoder", {}))
@@ -182,6 +226,12 @@ class MaskFormer(nn.Module):
         for task in self.tasks:
             # Pass outputs dict so tasks can read from previously executed tasks
             outputs["final"][task.name] = task(x, outputs=outputs["final"])
+
+        if self._layerwise is not None:
+            matching, layer_names, _ = self._layerwise
+            self._layer_outputs_ready("final", outputs)
+            outputs["_layerwise_matching"] = (matching, layer_names)
+            self._layerwise = None
 
         # store info about the input sort field for each input type
         if self.sorter is not None:
@@ -242,9 +292,9 @@ class MaskFormer(nn.Module):
             - encoder_outputs: Separated encoder outputs
             - decoder_outputs: Separated decoder layer outputs
         """
-        # Separate encoder and decoder outputs for cleaner logic
+        # Separate encoder and decoder outputs for cleaner logic (keys starting with "_" are internal)
         encoder_outputs = {"encoder": outputs["encoder"]} if "encoder" in outputs else {}
-        decoder_outputs = {k: v for k, v in outputs.items() if k != "encoder"}
+        decoder_outputs = {k: v for k, v in outputs.items() if k != "encoder" and not k.startswith("_")}
 
         # Include query_mask in targets if present (for masking padded query losses)
         if "encoder" in outputs and "query_mask" in outputs["encoder"] and "query_mask" not in targets:
@@ -286,36 +336,34 @@ class MaskFormer(nn.Module):
         Returns:
             Dictionary of costs keyed by layer name. Cost axes are (batch, pred, true).
         """
-        costs = {}
+        return {layer_name: self._layer_cost(layer_outputs, targets) for layer_name, layer_outputs in decoder_outputs.items()}
 
-        # Compute costs for decoder layers
-        for layer_name, layer_outputs in decoder_outputs.items():
-            layer_costs = None
+    def _layer_cost(self, layer_outputs: dict, targets: dict) -> Tensor | None:
+        """Cost matrix (batch, pred, true) of one decoder layer, or None if no task contributes to it."""
+        layer_costs = None
 
-            # Get the cost contribution from each of the decoder tasks
-            for task in self.tasks:
-                # Skip tasks that do not contribute intermediate losses
-                if task.name not in layer_outputs:
-                    continue
+        # Get the cost contribution from each of the decoder tasks
+        for task in self.tasks:
+            # Skip tasks that do not contribute intermediate losses
+            if task.name not in layer_outputs:
+                continue
 
-                # Compute costs
-                task_costs = task.cost(layer_outputs[task.name], targets)
+            # Compute costs
+            task_costs = task.cost(layer_outputs[task.name], targets)
 
-                # Add the cost on to our running cost total, otherwise initialise a running cost matrix
-                for cost in task_costs.values():
-                    if layer_costs is None:
-                        layer_costs = cost
-                    else:
-                        layer_costs += cost
+            # Add the cost on to our running cost total, otherwise initialise a running cost matrix
+            for cost in task_costs.values():
+                if layer_costs is None:
+                    layer_costs = cost
+                else:
+                    layer_costs += cost
 
-            # Added to allow completely turning off inter layer loss
-            # Possibly redundant as completely switching them off performs worse
-            if layer_costs is not None:
-                layer_costs = layer_costs.detach()
+        # Added to allow completely turning off inter layer loss
+        # Possibly redundant as completely switching them off performs worse
+        if layer_costs is not None:
+            layer_costs = layer_costs.detach()
 
-            costs[layer_name] = layer_costs
-
-        return costs
+        return layer_costs
 
     def _match_and_permute_outputs(self, decoder_outputs: dict, costs: dict[str, Tensor], targets: dict) -> None:
         """Perform optimal matching and permute decoder outputs accordingly.
@@ -360,21 +408,21 @@ class MaskFormer(nn.Module):
 
             # Reshape back to [num_layers, batch, num_pred]
             stacked_pred_idxs = stacked_pred_idxs.view(num_layers, batch_size, num_pred)
+            self._permute_outputs(decoder_outputs, layer_names, list(stacked_pred_idxs))
 
+    def _permute_outputs(self, decoder_outputs: dict, layer_names: list[str], layer_pred_idxs: list[Tensor]) -> None:
+        """Permute each layer's outputs by its matching, shape [batch, num_pred], so output[i] belongs to target[i]."""
+        for layer_name, pred_idxs in zip(layer_names, layer_pred_idxs, strict=True):
             # Create batch indices for indexing
-            batch_idxs_expanded = torch.arange(batch_size, device=stacked_pred_idxs.device).unsqueeze(1)
+            batch_idxs_expanded = torch.arange(pred_idxs.shape[0], device=pred_idxs.device).unsqueeze(1)
 
-            # Apply layer-specific permutations
-            for layer_idx, layer_name in enumerate(layer_names):
-                pred_idxs = stacked_pred_idxs[layer_idx]
+            for task in self.tasks:
+                if not task.should_permute_outputs(layer_name, decoder_outputs[layer_name]):
+                    continue
 
-                for task in self.tasks:
-                    if not task.should_permute_outputs(layer_name, decoder_outputs[layer_name]):
-                        continue
-
-                    for output_name in task.outputs:
-                        output_tensor = decoder_outputs[layer_name][task.name][output_name]
-                        decoder_outputs[layer_name][task.name][output_name] = output_tensor[batch_idxs_expanded, pred_idxs]
+                for output_name in task.outputs:
+                    output_tensor = decoder_outputs[layer_name][task.name][output_name]
+                    decoder_outputs[layer_name][task.name][output_name] = output_tensor[batch_idxs_expanded, pred_idxs]
 
     def _compute_decoder_losses(self, decoder_outputs: dict, targets: dict) -> dict[str, dict[str, Tensor]]:
         """Compute final losses for decoder tasks using permuted outputs.
@@ -433,12 +481,18 @@ class MaskFormer(nn.Module):
         # Compute encoder losses (no matching required)
         losses = self._compute_encoder_losses(encoder_outputs, targets)
 
-        # Compute costs for decoder layers
-        costs = self._compute_decoder_costs(decoder_outputs, targets)
+        layerwise = outputs.pop("_layerwise_matching", None)
+        if layerwise is not None:
+            # The forward pass already started matching each layer (overlap_layers): collect it
+            matching, layer_names = layerwise
+            self._permute_outputs(decoder_outputs, layer_names, matching.results())
+        else:
+            # Compute costs for decoder layers
+            costs = self._compute_decoder_costs(decoder_outputs, targets)
 
-        # Perform matching and permute decoder outputs to align with target order
-        # After this, output[i] corresponds to target[i] for all i
-        self._match_and_permute_outputs(decoder_outputs, costs, targets)
+            # Perform matching and permute decoder outputs to align with target order
+            # After this, output[i] corresponds to target[i] for all i
+            self._match_and_permute_outputs(decoder_outputs, costs, targets)
 
         # Compute final decoder losses using permuted outputs
         decoder_losses = self._compute_decoder_losses(decoder_outputs, targets)

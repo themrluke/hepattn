@@ -81,6 +81,8 @@ class MaskFormerDecoder(nn.Module):
         self.tasks: list | None = None  # Will be set by MaskFormer
         self.encoder_tasks: list | None = None  # Will be set by MaskFormer
         self._num_queries = num_queries
+        # Called as hook(layer_name, outputs) once a layer's task outputs exist (set by MaskFormer for overlap_layers)
+        self.layer_outputs_hook = None
         self.mask_attention = mask_attention
         self.use_query_masks = use_query_masks
         self.posenc = posenc
@@ -335,6 +337,10 @@ class MaskFormerDecoder(nn.Module):
                             attn_masks[input_name] |= task_attn_mask
                         else:
                             attn_masks[input_name] = task_attn_mask
+
+                # Let the model start matching this layer while the next layers run
+                if self.layer_outputs_hook is not None:
+                    self.layer_outputs_hook(f"layer_{layer_index}", outputs)
 
             # Construct the full attention mask for MaskAttention decoder
             if attn_masks and self.mask_attention:
