@@ -1,0 +1,1 @@
+per-particle cache eval_results/cache/*_phi.parquet (track valid 0.5, IoU 0.5); all trained particles 0.6 <= pT < 10 GeV (as the paper's Fig. 7)

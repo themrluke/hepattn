@@ -1,0 +1,85 @@
+{
+ "paper_table4_printed": {
+  "source": "UCL paper (vault _attachments/Efficient_sparse_reco_paper.pdf), Table 4, Pix0.6",
+  "MA": {
+   "dm": 98.0,
+   "perfect": 93.2,
+   "fake": 0.3
+  },
+  "LSCA": {
+   "dm": 97.6,
+   "perfect": 91.5,
+   "fake": 0.4
+  }
+ },
+ "paper_corrected": {
+  "source": "vault note 'Paper Table 4 inconsistency': DM and fake from Table 4, perfect from Fig. 7 over pT > 1",
+  "MA": {
+   "dm": 98.0,
+   "perfect": 95.3,
+   "fake": 0.3
+  },
+  "LSCA": {
+   "dm": 97.6,
+   "perfect": 93.9,
+   "fake": 0.4
+  }
+ },
+ "perf_audit_step_shares": {
+  "source": "py-spy profile of the paper-reproduction run, 2 Oct (note 'Arm A DQ+MA training')",
+  "Waiting on the 4 solves": 30,
+  "Copy costs to CPU": 20,
+  "Copy into new shared memory": 16,
+  "CPU transpose": 8.5,
+  "CPU mask (np.where)": 5.8,
+  "Free shared memory": 4.2,
+  "GPU work, data, other": 15.5
+ },
+ "gpu_busy_fraction_per_run": {
+  "source": "nvidia-smi pmon, 2 Oct",
+  "value": 0.16
+ },
+ "late_step_breakdown_ms": {
+  "source": "breakdown.py on captured epoch-29 costs + training timings (note 'Hungarian matching overhead')",
+  "GPU forward + costs (matcher waits)": 69,
+  "GPU prep + one copy": 6,
+  "4 solves on CPU (slowest)": 38,
+  "Backward, optimiser, rest": 127
+ },
+ "flash_vs_flex": {
+  "source": "TrackML/analysis/flex_vs_flash_2026-10-05/compare_*.log, paper-repro epoch-29 weights",
+  "flash_vs_flex_bf16_rel_diff": 0.06,
+  "flex_bf16_vs_fp32_rel_diff": 0.11,
+  "loss_flash": 0.3214,
+  "loss_flex": 0.3225,
+  "events": 20,
+  "torch_backend_loss": 6.8
+ },
+ "plateau_drop_epoch": {
+  "source": "Comet val/loss, vault note 'Flex vs flash and the training plateau'",
+  "paper_repro": 3,
+  "A_prime": 24,
+  "D_or": 8,
+  "flex_w256_s42": 3,
+  "or_w256_s42": 9
+ },
+ "or_w256_s42_divergence": {
+  "source": "Comet train/loss, run 3dd7ab3989844748812f83a92a3d6e61",
+  "step": 253199,
+  "epoch": 29.6,
+  "loss_before": 0.46,
+  "loss_after": 660829,
+  "final_val_loss": 7.16,
+  "evaluated_checkpoint": "epoch 28 (val 0.3146)"
+ },
+ "best_val_loss": {
+  "source": "checkpoint names",
+  "paper_repro": 0.28868,
+  "ucl_pix06_run": 0.28455,
+  "A_prime": 0.32403,
+  "D_or": 0.30994,
+  "flex_w256_s42": 0.29608,
+  "or_w256_s42": 0.31462
+ },
+ "session_expiry": "notebook session lifetime 7 days; current session expires 12 Oct 10:08 CEST"
+}
