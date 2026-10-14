@@ -1,0 +1,4 @@
+early: 32 layer costs, bitwise identical 0, identical matching 3; max relative cost difference 6.0e+03; particles re-paired: mean 0.705%, max 1.273%; total cost of the single-product matching vs the optimum (on the two-product costs): max +6.4e-07 relative
+early: scored on the exact (float64) cost, the single-product matching is lower in 2, equal in 3, higher in 27 of 32 layer matchings; sum of differences +1.371e+01
+late: 32 layer costs, bitwise identical 0, identical matching 24; max relative cost difference 2.6e+05; particles re-paired: mean 0.020%, max 0.164%; total cost of the single-product matching vs the optimum (on the two-product costs): max +9.5e-08 relative
+late: scored on the exact (float64) cost, the single-product matching is lower in 0, equal in 24, higher in 8 of 32 layer matchings; sum of differences +5.056e-02

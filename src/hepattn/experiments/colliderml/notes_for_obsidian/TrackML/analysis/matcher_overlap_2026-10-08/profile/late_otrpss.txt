@@ -1,0 +1,96 @@
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+                                                   Name    Self CPU %      Self CPU   CPU total %     CPU total  CPU time avg     Self CUDA   Self CUDA %    CUDA total  CUDA time avg    # of Calls  
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+                               Optimizer.step#Lion.step         0.00%       0.000us         0.00%       0.000us       0.000us        4.894s       167.38%        4.894s     244.713ms            20  
+                                               aten::mm         5.31%     322.131ms         5.76%     349.229ms      82.365us        1.149s        39.30%        1.149s     271.018us          4240  
+## Call CompiledFxGraph fkptotimvyzovtr2ddoiiezrwlrd...         0.00%       0.000us         0.00%       0.000us       0.000us     779.631ms        26.66%     779.631ms       9.745ms            80  
+void cutlass::Kernel2<cutlass_80_tensorop_s1688gemm_...         0.00%       0.000us         0.00%       0.000us       0.000us     734.948ms        25.14%     734.948ms       4.593ms           160  
+                    aten::_efficient_attention_backward         0.03%       1.520ms         0.09%       5.451ms      45.429us     491.893ms        16.82%     492.355ms       4.103ms           120  
+fmha_cutlassB_bf16_aligned_64x64_k32_sm80(PyTorchMem...         0.00%       0.000us         0.00%       0.000us       0.000us     491.893ms        16.82%     491.893ms       4.099ms           120  
+## Call CompiledFxGraph fduwr22wxnef5kscmqwob46y3ygb...         0.00%       0.000us         0.00%       0.000us       0.000us     353.363ms        12.09%     353.363ms       8.834ms            40  
+## Call CompiledFxGraph fzovytilbb5ce4hc6hwqfjdrsfkb...         0.00%       0.000us         0.00%       0.000us       0.000us     330.504ms        11.30%     330.504ms       4.131ms            80  
+## Call CompiledFxGraph fzochit4yosc3bx2xq5ztjt5fu3q...         0.00%       0.000us         0.00%       0.000us       0.000us     277.526ms         9.49%     277.526ms      13.876ms            20  
+                                            aten::copy_         0.39%      23.824ms         1.22%      73.905ms       9.140us     198.984ms         6.81%     198.987ms      24.609us          8086  
+void cutlass::Kernel2<cutlass_75_tensorop_bf16_s1688...         0.00%       0.000us         0.00%       0.000us       0.000us     181.084ms         6.19%     181.084ms       4.116ms            44  
+## Call CompiledFxGraph fy5du5xkruptmits3q2n5ilg5m2o...         0.00%       0.000us         0.00%       0.000us       0.000us     177.142ms         6.06%     177.142ms       8.857ms            20  
+                                          aten::nonzero         0.23%      14.106ms        33.21%        2.015s       4.610ms     164.409ms         5.62%     183.212ms     419.250us           437  
+                     aten::_efficient_attention_forward         0.02%       1.337ms         0.06%       3.432ms      28.596us     154.209ms         5.27%     154.209ms       1.285ms           120  
+fmha_cutlassF_bf16_aligned_64x64_rf_sm80(PyTorchMemE...         0.00%       0.000us         0.00%       0.000us       0.000us     154.209ms         5.27%     154.209ms       1.285ms           120  
+## Call CompiledFxGraph fepob2t6x2fi2yhqrzclm53tou4h...         0.00%       0.000us         0.00%       0.000us       0.000us     147.370ms         5.04%     147.370ms       7.368ms            20  
+## Call CompiledFxGraph fkmw6c46fekt7ht6cytevi63r5bh...         0.00%       0.000us         0.00%       0.000us       0.000us     122.362ms         4.18%     122.362ms       3.059ms            40  
+                                 aten::_index_put_impl_         0.13%       7.694ms        24.29%        1.473s       4.912ms     120.880ms         4.13%     310.513ms       1.035ms           300  
+void at::native::(anonymous namespace)::write_indice...         0.00%       0.000us         0.00%       0.000us       0.000us     120.703ms         4.13%     120.703ms     320.168us           377  
+void at::native::index_elementwise_kernel<128, 4, at...         0.00%       0.000us         0.00%       0.000us       0.000us     116.372ms         3.98%     116.372ms     969.766us           120  
+void cutlass::Kernel2<cutlass_75_tensorop_bf16_s1688...         0.00%       0.000us         0.00%       0.000us       0.000us     110.701ms         3.79%     110.701ms       1.538ms            72  
+## Call CompiledFxGraph ftvg6y4mugmx6palc2awhxwoouhx...         0.00%       0.000us         0.00%       0.000us       0.000us      61.399ms         2.10%      61.399ms       3.070ms            20  
+                         Memcpy DtoH (Device -> Pinned)         0.00%       0.000us         0.00%       0.000us       0.000us      59.110ms         2.02%      59.110ms      97.864us           604  
+                       flash_attn::_flash_attn_backward         0.17%      10.071ms         0.22%      13.455ms      84.091us      42.908ms         1.47%      42.908ms     268.173us           160  
+                                           aten::gather         0.04%       2.513ms         0.10%       5.788ms      15.232us      42.581ms         1.46%      42.581ms     112.055us           380  
+void at::native::_scatter_gather_elementwise_kernel<...         0.00%       0.000us         0.00%       0.000us       0.000us      42.581ms         1.46%      42.581ms     112.055us           380  
+                                             aten::add_         0.47%      28.791ms         0.98%      59.224ms       6.043us      42.402ms         1.45%      42.402ms       4.327us          9800  
+void flash::flash_bwd_dq_dk_dv_loop_seqk_parallel_ke...         0.00%       0.000us         0.00%       0.000us       0.000us      39.053ms         1.34%      39.053ms     244.082us           160  
+void cutlass::Kernel2<cutlass_80_tensorop_bf16_s1681...         0.00%       0.000us         0.00%       0.000us       0.000us      37.951ms         1.30%      37.951ms       1.355ms            28  
+void at::native::unrolled_elementwise_kernel<at::nat...         0.00%       0.000us         0.00%       0.000us       0.000us      36.859ms         1.26%      36.859ms      42.562us           866  
+                                          ProfilerStep*         0.00%       0.000us         0.00%       0.000us       0.000us      36.306ms         1.24%      36.306ms       1.815ms            20  
+void at_cuda_detail::cub::DeviceSelectSweepKernel<at...         0.00%       0.000us         0.00%       0.000us       0.000us      35.472ms         1.21%      35.472ms      81.171us           437  
+## Call CompiledFxGraph f3fjvpili2u43rnealvqskdd5aut...         0.00%       0.000us         0.00%       0.000us       0.000us      35.204ms         1.20%      35.204ms     880.105us            40  
+## Call CompiledFxGraph fmxjp6cwdef5cbrzkfllg4l42hv4...         0.00%       0.000us         0.00%       0.000us       0.000us      33.590ms         1.15%      33.590ms     839.755us            40  
+                         Memcpy HtoD (Pinned -> Device)         0.00%       0.000us         0.00%       0.000us       0.000us      29.834ms         1.02%      29.834ms      53.275us           560  
+triton_poi_fused_binary_cross_entropy_with_logits_mu...         0.01%     847.414us         0.03%       1.552ms      19.395us      28.470ms         0.97%      28.470ms     355.877us            80  
+triton_poi_fused_binary_cross_entropy_with_logits_mu...         0.00%       0.000us         0.00%       0.000us       0.000us      28.470ms         0.97%      28.470ms     355.877us            80  
+void at::native::vectorized_elementwise_kernel<8, at...         0.00%       0.000us         0.00%       0.000us       0.000us      27.107ms         0.93%      27.107ms      56.472us           480  
+void at::native::vectorized_elementwise_kernel<4, at...         0.00%       0.000us         0.00%       0.000us       0.000us      24.502ms         0.84%      24.502ms       1.834us         13362  
+void at::native::unrolled_elementwise_kernel<at::nat...         0.00%       0.000us         0.00%       0.000us       0.000us      24.330ms         0.83%      24.330ms     202.750us           120  
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+Self CPU time total: 6.067s
+Self CUDA time total: 2.924s
+
+
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+                                                   Name    Self CPU %      Self CPU   CPU total %     CPU total  CPU time avg     Self CUDA   Self CUDA %    CUDA total  CUDA time avg    # of Calls  
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+                               Optimizer.step#Lion.step        35.04%        2.126s        81.06%        4.918s     245.908ms       0.000us         0.00%        2.035s     101.729ms            20  
+                                  cudaStreamSynchronize        32.71%        1.984s        32.71%        1.985s       2.856ms       0.000us         0.00%       0.000us       0.000us           695  
+                                   cudaEventSynchronize        19.28%        1.170s        19.33%        1.173s      14.662ms       0.000us         0.00%     327.717us       4.096us            80  
+                                               aten::mm         5.31%     322.131ms         5.76%     349.229ms      82.365us        1.149s        39.30%        1.149s     271.018us          4240  
+                                       cudaLaunchKernel         2.53%     153.633ms         2.56%     155.261ms       3.499us       0.000us         0.00%       0.000us       0.000us         44373  
+                                         cuLaunchKernel         0.98%      59.189ms         0.98%      59.189ms       4.139us       0.000us         0.00%       0.000us       0.000us         14300  
+## Call CompiledFxGraph fzochit4yosc3bx2xq5ztjt5fu3q...         0.97%      58.666ms         4.11%     249.328ms      12.466ms       0.000us         0.00%     153.858ms       7.693ms            20  
+## Call CompiledFxGraph fepob2t6x2fi2yhqrzclm53tou4h...         0.94%      57.325ms         2.50%     151.453ms       7.573ms       0.000us         0.00%      49.795ms       2.490ms            20  
+                                        cudaMemcpyAsync         0.68%      41.524ms         0.68%      41.527ms       6.137us       0.000us         0.00%       0.000us       0.000us          6767  
+                                            aten::addmm         0.56%      33.829ms         0.65%      39.249ms      63.304us       8.215ms         0.28%       8.215ms      13.250us           620  
+                               CompiledFunctionBackward         0.50%      30.113ms         7.30%     443.058ms       1.108ms       0.000us         0.00%     769.378ms       1.923ms           400  
+                                             aten::mul_         0.48%      29.348ms         1.11%      67.208ms       5.473us      17.919ms         0.61%      17.922ms       1.459us         12280  
+                                             aten::add_         0.47%      28.791ms         0.98%      59.224ms       6.043us      42.402ms         1.45%      42.402ms       4.327us          9800  
+                               TorchDynamo Cache Lookup         0.46%      28.197ms         0.52%      31.756ms      36.926us       0.000us         0.00%       0.000us       0.000us           860  
+                                       CompiledFunction         0.46%      27.863ms         5.09%     308.887ms     772.217us       0.000us         0.00%     301.863ms     754.659us           400  
+## Call CompiledFxGraph fduwr22wxnef5kscmqwob46y3ygb...         0.43%      26.060ms         1.21%      73.442ms       1.836ms       0.000us         0.00%     347.244ms       8.681ms            40  
+                                          ProfilerStep*         0.42%      25.255ms        81.64%        4.953s     247.671ms       0.000us         0.00%        2.064s     103.224ms            20  
+                                            aten::copy_         0.39%      23.824ms         1.22%      73.905ms       9.140us     198.984ms         6.81%     198.987ms      24.609us          8086  
+                                    aten::empty_strided         0.38%      23.335ms         0.38%      23.335ms       3.028us       0.000us         0.00%       0.000us       0.000us          7706  
+                                       cuLaunchKernelEx         0.33%      20.244ms         0.33%      20.244ms       4.820us       0.000us         0.00%       0.000us       0.000us          4200  
+## Call CompiledFxGraph fkmw6c46fekt7ht6cytevi63r5bh...         0.30%      17.950ms         0.68%      41.100ms       1.028ms       0.000us         0.00%     120.882ms       3.022ms            40  
+                                              aten::add         0.29%      17.872ms         0.50%      30.207ms       6.864us      18.170ms         0.62%      18.170ms       4.129us          4401  
+## Call CompiledFxGraph fy5du5xkruptmits3q2n5ilg5m2o...         0.26%      16.018ms         0.58%      35.122ms       1.756ms       0.000us         0.00%     174.009ms       8.700ms            20  
+## Call CompiledFxGraph ftvg6y4mugmx6palc2awhxwoouhx...         0.26%      15.621ms         0.52%      31.739ms       1.587ms       0.000us         0.00%      60.590ms       3.029ms            20  
+                                              aten::mul         0.24%      14.737ms         0.38%      22.783ms      14.020us      21.598ms         0.74%      21.598ms      13.291us          1625  
+                                          aten::nonzero         0.23%      14.106ms        33.21%        2.015s       4.610ms     164.409ms         5.62%     183.212ms     419.250us           437  
+                                            aten::empty         0.21%      12.987ms         0.21%      12.987ms       2.337us       0.000us         0.00%       0.000us       0.000us          5558  
+                                Activity Buffer Request         0.19%      11.427ms         0.19%      11.427ms       1.632ms       6.753us         0.00%       6.753us       0.965us             7  
+                                            aten::clone         0.18%      10.860ms         1.19%      72.191ms      13.339us       0.000us         0.00%      45.237ms       8.359us          5412  
+                       flash_attn::_flash_attn_backward         0.17%      10.071ms         0.22%      13.455ms      84.091us      42.908ms         1.47%      42.908ms     268.173us           160  
+autograd::engine::evaluate_function: CompiledFunctio...         0.16%       9.774ms         7.55%     458.320ms       1.146ms       0.000us         0.00%     778.045ms       1.945ms           400  
+                        flash_attn::_flash_attn_forward         0.16%       9.553ms         0.22%      13.415ms      83.846us      20.317ms         0.69%      20.317ms     126.981us           160  
+                                            aten::sign_         0.15%       9.271ms         0.34%      20.883ms       5.119us       5.639ms         0.19%       5.639ms       1.382us          4080  
+autograd::engine::evaluate_function: torch::autograd...         0.14%       8.533ms         0.32%      19.154ms       4.695us       0.000us         0.00%       0.000us       0.000us          4080  
+                     Optimizer.zero_grad#Lion.zero_grad         0.13%       8.186ms         0.13%       8.186ms     409.288us       0.000us         0.00%       0.000us       0.000us            20  
+                                    aten::_foreach_norm         0.13%       8.036ms         0.17%      10.074ms     503.714us     866.151us         0.03%     891.177us      44.559us            20  
+                                       aten::as_strided         0.13%       7.904ms         0.13%       7.904ms       0.589us       0.000us         0.00%       0.000us       0.000us         13421  
+## Call CompiledFxGraph fmxjp6cwdef5cbrzkfllg4l42hv4...         0.13%       7.822ms         0.27%      16.391ms     409.769us       0.000us         0.00%      32.746ms     818.651us            40  
+                                 aten::_index_put_impl_         0.13%       7.694ms        24.29%        1.473s       4.912ms     120.880ms         4.13%     310.513ms       1.035ms           300  
+## Call CompiledFxGraph fzovytilbb5ce4hc6hwqfjdrsfkb...         0.12%       7.386ms         0.23%      14.098ms     176.222us       0.000us         0.00%     330.088ms       4.126ms            80  
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+Self CPU time total: 6.067s
+Self CUDA time total: 2.924s
+
+

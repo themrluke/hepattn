@@ -1,0 +1,33 @@
+Seed set to 42
+Using bfloat16 Automatic Mixed Precision (AMP)
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+Using hit eval dataset /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_train_eval.h5
+Using hit eval dataset /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_val_eval.h5
+Created training dataset with 8,543 events
+Created validation dataset with 100 events
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+Loading `train_dataloader` to estimate number of stepping batches.
+
+  | Name  | Type       | Params | Mode 
+---------------------------------------------
+0 | model | MaskFormer | 8.7 M  | train
+---------------------------------------------
+8.7 M     Trainable params
+0         Non-trainable params
+8.7 M     Total params
+34.676    Total estimated model params size (MB)
+276       Modules in train mode
+0         Modules in eval mode
+loaded weights from /shared/projects/hepattn/src/hepattn/experiments/trackml/logs/TRK-Pix0.6-DQMA-paper_20261002-T123110/ckpts/epoch=029-val_loss=0.29318.ckpt
+--------------------------------------------------------------------------------
+compiling model...
+ -> compiling model.encoder...
+ -> compiling model.decoder...
+-------------------------------------------------------------------------------- 
+
+Training: |                                                                                                                | 0/? [00:00<?, ?it/s]Training:   0%|                                                                                                         | 0/8543 [00:00<?, ?it/s]Epoch 0:   0%|                                                                                                          | 0/8543 [00:00<?, ?it/s]W1014 11:42:00.927000 48792 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [11/1] _maybe_guard_rel() was called on non-relation expression Eq(s34, s93) | Eq(s93, 1)
+W1014 11:42:02.418000 48792 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [11/1_1] _maybe_guard_rel() was called on non-relation expression Eq(s34, s93) | Eq(s93, 1)
+Epoch 0:   1%|▌                                                                                              | 50/8543 [00:45<2:10:12,  1.09it/s]Epoch 0:   1%|▌                                                                                              | 50/8543 [00:45<2:10:12,  1.09it/s]Epoch 0:   1%|█                                                                                             | 100/8543 [00:56<1:19:06,  1.78it/s]Epoch 0:   1%|█                                                                                             | 100/8543 [00:56<1:19:06,  1.78it/s]Epoch 0:   2%|█▋                                                                                            | 150/8543 [01:06<1:01:41,  2.27it/s]Epoch 0:   2%|█▋                                                                                            | 150/8543 [01:06<1:01:42,  2.27it/s]Epoch 0:   2%|██▏                                                                                             | 200/8543 [01:16<53:02,  2.62it/s]Epoch 0:   2%|██▏                                                                                             | 200/8543 [01:16<53:02,  2.62it/s]Epoch 0:   3%|██▊                                                                                             | 250/8543 [01:26<47:41,  2.90it/s]Epoch 0:   3%|██▊                                                                                             | 250/8543 [01:26<47:41,  2.90it/s]Epoch 0:   4%|███▎                                                                                            | 300/8543 [01:36<44:05,  3.12it/s]Epoch 0:   4%|███▎                                                                                            | 300/8543 [01:36<44:05,  3.12it/s]Epoch 0:   4%|███▉                                                                                            | 350/8543 [01:46<41:24,  3.30it/s]Epoch 0:   4%|███▉                                                                                            | 350/8543 [01:46<41:25,  3.30it/s]Epoch 0:   5%|████▍                                                                                           | 400/8543 [01:56<39:28,  3.44it/s]Epoch 0:   5%|████▍                                                                                           | 400/8543 [01:56<39:28,  3.44it/s]Epoch 0:   5%|█████                                                                                           | 450/8543 [02:06<37:52,  3.56it/s]Epoch 0:   5%|█████                                                                                           | 450/8543 [02:06<37:52,  3.56it/s]Epoch 0:   6%|█████▌                                                                                          | 500/8543 [02:16<36:33,  3.67it/s]Epoch 0:   6%|█████▌                                                                                          | 500/8543 [02:16<36:33,  3.67it/s]Epoch 0:   6%|██████▏                                                                                         | 550/8543 [02:26<35:27,  3.76it/s]Epoch 0:   6%|██████▏                                                                                         | 550/8543 [02:26<35:27,  3.76it/s]Epoch 0:   7%|██████▋                                                                                         | 600/8543 [02:36<34:31,  3.83it/s]Epoch 0:   7%|██████▋                                                                                         | 600/8543 [02:36<34:31,  3.83it/s]Epoch 0:   7%|██████▋                                                                                         | 600/8543 [02:36<34:31,  3.83it/s]`Trainer.fit` stopped: `max_steps=600` reached.
+Epoch 0:   7%|██████▋                                                                                         | 600/8543 [02:36<34:31,  3.83it/s]

@@ -1,0 +1,236 @@
+seed_everything: 42
+name: bench-otrpss
+data:
+  train_dir: /eos/user/l/ljohnson/datasets/TrackML_UCL/train/
+  val_dir: /eos/user/l/ljohnson/datasets/TrackML_UCL/val/
+  test_dir: /eos/user/l/ljohnson/datasets/TrackML_UCL/test/
+  hit_eval_train: /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_train_eval.h5
+  hit_eval_val: /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_val_eval.h5
+  hit_eval_test: /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_test_eval.h5
+  hit_filter_threshold: 0.1
+  num_workers: 10
+  num_train: -1
+  num_test: -1
+  num_val: -1
+  hit_volume_ids:
+  - 7
+  - 8
+  - 9
+  particle_min_pt: 0.6
+  particle_max_abs_eta: 4
+  particle_min_num_hits: 3
+  event_max_num_particles: 3900
+  strict_max_objects: false
+  inputs:
+    hit:
+    - x
+    - y
+    - z
+    - r
+    - s
+    - eta
+    - phi
+    - u
+    - v
+    - s
+    - charge_frac
+    - leta
+    - lphi
+    - lx
+    - ly
+    - lz
+    - geta
+    - gphi
+  targets:
+    hit:
+    - is_first
+    particle:
+    - pt
+    - eta
+    - phi
+trainer:
+  max_epochs: 30
+  accelerator: gpu
+  devices: 1
+  precision: bf16-mixed
+  log_every_n_steps: 50
+  default_root_dir: <scratch>/bench
+  gradient_clip_val: 0.1
+  enable_progress_bar: true
+  logger: false
+  callbacks:
+  - class_path: hepattn.callbacks.Compile
+    init_args:
+      skip_dynamic_cudagraphs: true
+  - class_path: lightning.pytorch.callbacks.TQDMProgressBar
+    init_args:
+      refresh_rate: 50
+  enable_checkpointing: false
+  max_steps: 600
+  limit_val_batches: 0
+  num_sanity_val_steps: 0
+model:
+  optimizer: Lion
+  lrs_config:
+    initial: 1e-5
+    max: 5e-5
+    end: 1e-5
+    pct_start: 0.02
+    skip_scheduler: false
+    weight_decay: 1e-5
+  mtl: false
+  model:
+    class_path: hepattn.models.MaskFormer
+    init_args:
+      dim: 256
+      input_sort_field: phi
+      input_nets:
+        class_path: torch.nn.ModuleList
+        init_args:
+          modules:
+          - class_path: hepattn.models.InputNet
+            init_args:
+              input_name: hit
+              fields:
+              - x
+              - y
+              - z
+              - r
+              - eta
+              - phi
+              - u
+              - v
+              - s
+              - charge_frac
+              - leta
+              - lphi
+              - lx
+              - ly
+              - lz
+              - geta
+              - gphi
+              net:
+                class_path: hepattn.models.Dense
+                init_args:
+                  input_size: 17
+                  hidden_layers:
+                  - 128
+                  output_size: 256
+                  activation: SwiGLU
+              posenc:
+                class_path: hepattn.models.PositionEncoder
+                init_args:
+                  input_name: hit
+                  fields:
+                  - r
+                  - eta
+                  - phi
+                  dim: 256
+      encoder:
+        class_path: hepattn.models.Encoder
+        init_args:
+          num_layers: 8
+          dim: 256
+          attn_type: flash
+          window_size: 512
+          window_wrap: true
+          hybrid_norm: true
+          norm: CustomLayerNorm
+          dense_kwargs:
+            activation: SwiGLU
+          attn_kwargs:
+            bias: false
+      decoder:
+        dynamic_queries: true
+        dynamic_query_source: hit
+        num_decoder_layers: 3
+        num_queries: 3900
+        mask_attention: true
+        use_query_masks: false
+        debug: false
+        unmask_all_false: true
+        decoder_layer_config:
+          dim: 256
+          norm: CustomLayerNorm
+          hybrid_norm: true
+          dense_kwargs:
+            activation: SwiGLU
+          attn_kwargs:
+            bias: false
+          bidirectional_ca: false
+      encoder_tasks:
+        class_path: torch.nn.ModuleList
+        init_args:
+          modules:
+          - class_path: hepattn.models.task.ClassificationTask
+            init_args:
+              name: query_init
+              input_object: hit
+              classes:
+              - is_first
+              loss_weight: 1.0
+              threshold: 0.3
+              permute_loss: false
+              net:
+                class_path: hepattn.models.Dense
+                init_args:
+                  input_size: 256
+                  hidden_layers:
+                  - 256
+                  output_size: 1
+      tasks:
+        class_path: torch.nn.ModuleList
+        init_args:
+          modules:
+          - class_path: hepattn.models.task.ObjectClassificationTask
+            init_args:
+              name: track_valid
+              input_object: query
+              output_object: track
+              target_object: particle
+              has_intermediate_loss: true
+              has_first_layer_loss: false
+              dim: 256
+              losses:
+                object_bce: 0.1
+              costs:
+                object_bce: 0.1
+              null_weight: 1.0
+          - class_path: hepattn.models.task.ObjectHitMaskTask
+            init_args:
+              name: track_hit_valid
+              input_constituent: hit
+              input_object: query
+              output_object: track
+              target_object: particle
+              dim: 256
+              losses:
+                mask_dice: 2.0
+                mask_focal: 25.0
+              costs:
+                mask_dice: 2.0
+                mask_focal: 25.0
+              null_weight: 1.0
+          - class_path: hepattn.models.task.IoUPredictionTask
+            init_args:
+              name: track_iou
+              input_object: query
+              mask_task_name: track_hit_valid
+              mask_logit_key: track_hit_logit
+              target_mask_key: particle_hit
+              dim: 256
+              loss_weight: 1.0
+      matcher:
+        class_path: hepattn.models.matcher.Matcher
+        init_args:
+          default_solver: scipy
+          adaptive_solver: false
+          n_jobs: 4
+          parallel_solver: true
+          parallel_backend: process
+          prepare_on_device: true
+          trim_padded_queries: true
+          overlap_layers: true
+      trim_target_costs: true
+      fast_permute: true
+      slice_valid_targets: true
