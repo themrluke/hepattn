@@ -4,6 +4,7 @@ import torch
 from torch import Tensor, nn
 
 from hepattn.models.decoder import MaskFormerDecoder
+from hepattn.models.fast_indexing import RowPermutation, valid_prefix_length
 from hepattn.utils.model_utils import unmerge_inputs
 
 
@@ -24,6 +25,8 @@ class MaskFormer(nn.Module):
         dynamic_query_source: str = "hit",
         encoder_tasks: nn.ModuleList | None = None,
         trim_target_costs: bool = False,
+        fast_permute: bool = False,
+        slice_valid_targets: bool = False,
     ):
         """Initializes the MaskFormer model, which is a modular transformer-style architecture designed
         for multi-task object reconstruction with attention-based decoding and optional encoder blocks.
@@ -44,6 +47,10 @@ class MaskFormer(nn.Module):
             encoder_tasks: Optional list of tasks to run after the encoder (before decoder). These tasks operate on post-encoder features.
             trim_target_costs: If True, the matching costs are computed only for the real target objects (which come first),
                 not for the padding up to num_queries, which the matcher never reads. Losses still use every slot.
+            fast_permute: If True, the matched outputs are reordered with a gather whose backward is the inverse
+                permutation, instead of advanced indexing (whose backward sorts and accumulates). Bit-identical.
+            slice_valid_targets: If True, the loss tells tasks how many leading target slots are valid (one wait for the
+                GPU per step), so mask losses can slice those rows instead of boolean-mask indexing them. Bit-identical.
         """
         super().__init__()
 
@@ -62,6 +69,8 @@ class MaskFormer(nn.Module):
         self.dynamic_query_source = dynamic_query_source
         self.decoder.dynamic_query_source = dynamic_query_source
         self.trim_target_costs = trim_target_costs
+        self.fast_permute = fast_permute
+        self.slice_valid_targets = slice_valid_targets
 
         assert not (input_sort_field and sorter), "Cannot specify both input_sort_field and sorter."
         # The per-head mask is defined over token index, so hits only have useful neighbours once
@@ -438,6 +447,7 @@ class MaskFormer(nn.Module):
         for layer_name, pred_idxs in zip(layer_names, layer_pred_idxs, strict=True):
             # Create batch indices for indexing
             batch_idxs_expanded = torch.arange(pred_idxs.shape[0], device=pred_idxs.device).unsqueeze(1)
+            permutation = None
 
             for task in self.tasks:
                 if not task.should_permute_outputs(layer_name, decoder_outputs[layer_name]):
@@ -445,7 +455,11 @@ class MaskFormer(nn.Module):
 
                 for output_name in task.outputs:
                     output_tensor = decoder_outputs[layer_name][task.name][output_name]
-                    decoder_outputs[layer_name][task.name][output_name] = output_tensor[batch_idxs_expanded, pred_idxs]
+                    if self.fast_permute:
+                        permutation = permutation or RowPermutation(pred_idxs, output_tensor.device)
+                        decoder_outputs[layer_name][task.name][output_name] = permutation(output_tensor)
+                    else:
+                        decoder_outputs[layer_name][task.name][output_name] = output_tensor[batch_idxs_expanded, pred_idxs]
 
     def _compute_decoder_losses(self, decoder_outputs: dict, targets: dict) -> dict[str, dict[str, Tensor]]:
         """Compute final losses for decoder tasks using permuted outputs.
@@ -518,7 +532,17 @@ class MaskFormer(nn.Module):
             self._match_and_permute_outputs(decoder_outputs, costs, targets)
 
         # Compute final decoder losses using permuted outputs
-        decoder_losses = self._compute_decoder_losses(decoder_outputs, targets)
+        loss_targets = targets
+        if self.slice_valid_targets:
+            # How many leading slots hold valid targets (and valid queries): tasks can slice them instead of
+            # boolean-mask indexing. Only for the losses; the returned targets stay as they were.
+            valid = targets[f"{self.target_object}_valid"]
+            if "query_mask" in targets:
+                valid = valid & targets["query_mask"]
+            num_valid = valid_prefix_length(valid)
+            if num_valid is not None:
+                loss_targets = {**targets, "_object_valid_prefix": num_valid}
+        decoder_losses = self._compute_decoder_losses(decoder_outputs, loss_targets)
         losses.update(decoder_losses)
 
         return outputs, targets, losses
