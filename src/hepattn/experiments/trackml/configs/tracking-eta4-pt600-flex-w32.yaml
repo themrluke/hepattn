@@ -279,10 +279,10 @@ model:
       matcher:
         class_path: hepattn.models.matcher.Matcher
         init_args:
-          # No adaptive check: it timed both solvers on the full padded 3900x3900 costs every 1000 steps (10-25 s),
-          # where lap1015_late wins, but on the real (masked) problems scipy is faster (11 Oct: half the matcher time
-          # early in training, equal late). Same optimal pairs; scipy lists the leftover queries in index order
-          default_solver: scipy
+          # No adaptive check (it timed the solvers on the full padded costs every 1000 steps, 10-25 s each time).
+          # lap1015_late, not scipy: from random initialisation scipy is 2-25x slower (14 Oct, 0.35 it/s), though
+          # after the first epoch it is up to 2x faster. Same optimal pairs either way
+          default_solver: lap1015_late
           adaptive_solver: false
           n_jobs: 4  # one process per matched layer (3 decoder layers + final); was *num_dec_layers = 3
           parallel_solver: true
