@@ -41,6 +41,12 @@ class ModelWrapper(LightningModule):
         self._sync_decoder_epoch()
         return self.model(inputs)
 
+    def _forward_for_loss(self, inputs: dict[str, Tensor], targets: dict[str, Tensor]) -> dict[str, Tensor]:
+        """Forward pass followed by model.loss: models that can match during the forward get the targets."""
+        if getattr(self.model, "matches_during_forward", False):
+            return self.model(inputs, targets=targets)
+        return self.model(inputs)
+
     def _sync_decoder_epoch(self) -> None:
         decoder = getattr(self.model, "decoder", None)
         if decoder is None or not hasattr(decoder, "set_current_epoch"):
@@ -93,7 +99,7 @@ class ModelWrapper(LightningModule):
 
         # Get the model outputs
         self._sync_decoder_epoch()
-        outputs = self.model(inputs)
+        outputs = self._forward_for_loss(inputs, targets)
 
         # Compute and log losses
         outputs, targets, losses = self.model.loss(outputs, targets)
@@ -115,7 +121,7 @@ class ModelWrapper(LightningModule):
 
         # Get the raw model outputs
         self._sync_decoder_epoch()
-        outputs = self.model(inputs)
+        outputs = self._forward_for_loss(inputs, targets)
 
         # Compute losses then aggregate and log them
         outputs, targets, losses = self.model.loss(outputs, targets)

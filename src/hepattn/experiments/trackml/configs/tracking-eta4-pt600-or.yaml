@@ -275,11 +275,22 @@ model:
                 dim: *dim
                 loss_weight: 1.0
 
+      # Faster loss indexing, bit-identical (fast_indexing.py), and matching costs for the real targets only
+      # (TF32 rounding differs with the smaller shape: near-tied matchings only). See the training-speedups branch
+      trim_target_costs: true
+      fast_permute: true
+      slice_valid_targets: true
       matcher:
         class_path: hepattn.models.matcher.Matcher
         init_args:
+          # No adaptive check: it timed both solvers on the full padded 3900x3900 costs every 1000 steps (10-25 s),
+          # where lap1015_late wins, but on the real (masked) problems scipy is faster (11 Oct: half the matcher time
+          # early in training, equal late). Same optimal pairs; scipy lists the leftover queries in index order
           default_solver: scipy
-          adaptive_solver: true
+          adaptive_solver: false
           n_jobs: 4  # one process per matched layer (3 decoder layers + final); was *num_dec_layers = 3
           parallel_solver: true
           parallel_backend: process
+          prepare_on_device: true  # identical matching, less copying (see matcher.py)
+          trim_padded_queries: true  # smaller solves; the unmatched valid queries get the no-object loss, in index order
+          overlap_layers: true  # each layer's solves start while the GPU computes the later layers; identical matching

@@ -6,6 +6,7 @@ import torch
 from torch import Tensor, nn
 
 from hepattn.models.dense import Dense
+from hepattn.models.fast_indexing import take_prefix_rows
 from hepattn.models.loss import cost_fns, loss_fns, mask_focal_loss
 from hepattn.utils.masks import topk_attn
 from hepattn.utils.scaling import FeatureScaler
@@ -619,6 +620,16 @@ class ObjectHitMaskTask(Task):
             object_pad = object_pad & query_mask
 
         sample_weight = target + self.null_weight * (1 - target)
+
+        # MaskFormer(slice_valid_targets=True): object_pad is True for exactly the first num_valid slots (same mask,
+        # computed there once per step), so slice those rows: what object_pad indexing gives, without its GPU waits
+        num_valid = targets.get("_object_valid_prefix")
+        if num_valid is not None and output.shape[0] == 1:
+            output = take_prefix_rows(output, num_valid)
+            target = take_prefix_rows(target, num_valid)
+            sample_weight = take_prefix_rows(sample_weight, num_valid)
+            object_pad = None
+
         losses = {}
         for loss_fn, loss_weight in self.losses.items():
             losses[loss_fn] = loss_weight * loss_fns[loss_fn](

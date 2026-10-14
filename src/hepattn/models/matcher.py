@@ -2,6 +2,7 @@ import atexit
 import contextlib
 import time
 import warnings
+from concurrent.futures import Future, ThreadPoolExecutor
 from multiprocessing import get_context, shared_memory
 from multiprocessing.pool import ThreadPool
 from threading import Lock
@@ -21,6 +22,10 @@ _PROCESS_POOLS = {}
 # Shared-memory buffer reused across matcher calls (parent side), and each worker's handle to it
 _SHM_BUFFER: shared_memory.SharedMemory | None = None
 _WORKER_SHM: shared_memory.SharedMemory | None = None
+# Address of the buffer while it is page-locked for CUDA (overlap_layers), so it can be unlocked before it is freed
+_PINNED_ADDRESS: int | None = None
+# One thread that waits for each layer's copy to finish and hands its solves to the process pool
+_DISPATCHER: ThreadPoolExecutor | None = None
 
 
 def _get_thread_pool(n_jobs: int) -> ThreadPool:
@@ -55,6 +60,8 @@ def _close_pools() -> None:
 
     global _SHM_BUFFER  # noqa: PLW0603
     if _SHM_BUFFER is not None:
+        with contextlib.suppress(Exception):
+            _unpin_shm_buffer()
         with contextlib.suppress(Exception):
             _SHM_BUFFER.close()
         with contextlib.suppress(Exception):
@@ -184,12 +191,39 @@ def match_multiprocess(
                 shm.unlink()
 
 
+def _shm_address(shm: shared_memory.SharedMemory) -> int:
+    return np.frombuffer(shm.buf, dtype=np.uint8).ctypes.data
+
+
+def _unpin_shm_buffer() -> None:
+    global _PINNED_ADDRESS  # noqa: PLW0603
+    if _PINNED_ADDRESS is not None:
+        torch.cuda.cudart().cudaHostUnregister(_PINNED_ADDRESS)
+        _PINNED_ADDRESS = None
+
+
+def _pin_shm_buffer(shm: shared_memory.SharedMemory) -> bool:
+    """Page-lock the buffer for CUDA, so device-to-host copies into it can run without blocking."""
+    global _PINNED_ADDRESS  # noqa: PLW0603
+    address = _shm_address(shm)
+    with _POOL_LOCK:
+        if address == _PINNED_ADDRESS:
+            return True
+        _unpin_shm_buffer()
+        if torch.cuda.cudart().cudaHostRegister(address, shm.size, 0) != torch.cuda.cudart().cudaError.success:
+            return False
+        _PINNED_ADDRESS = address
+        return True
+
+
 def _get_shm_buffer(nbytes: int) -> shared_memory.SharedMemory:
     """Return the persistent shared-memory buffer, growing it if it is too small."""
     global _SHM_BUFFER  # noqa: PLW0603
     with _POOL_LOCK:
         if _SHM_BUFFER is None or _SHM_BUFFER.size < nbytes:
             if _SHM_BUFFER is not None:
+                if _shm_address(_SHM_BUFFER) == _PINNED_ADDRESS:
+                    _unpin_shm_buffer()
                 _SHM_BUFFER.close()
                 with contextlib.suppress(FileNotFoundError):
                     _SHM_BUFFER.unlink()
@@ -197,26 +231,40 @@ def _get_shm_buffer(nbytes: int) -> shared_memory.SharedMemory:
         return _SHM_BUFFER
 
 
-def _mp_match_task_persistent(args: tuple[str, str, tuple[int, int, int], int, int, int]) -> np.ndarray:
+def _mp_match_task_persistent(args: tuple) -> np.ndarray:
     """Like _mp_match_task, but the worker keeps its handle to the buffer between calls.
 
-    The buffer may hold only the first `width` query columns (shape[2] < pred_dim); the queries beyond
-    them are then appended, in order, after the solver's output.
+    args are (solver_name, shm_name, shape, i, length, pred_dim) plus an optional width. Only the first
+    `width` query columns are solved, either because the buffer holds only those (shape[2] < pred_dim) or
+    because a smaller width is given; the queries beyond them are then appended, in order, after the
+    solver's output.
     """
     global _WORKER_SHM  # noqa: PLW0603
-    solver_name, shm_name, shape, i, length, pred_dim = args
+    solver_name, shm_name, shape, i, length, pred_dim, *optional_width = args
     if _WORKER_SHM is None or _WORKER_SHM.name != shm_name:
         if _WORKER_SHM is not None:
             _WORKER_SHM.close()
         _WORKER_SHM = shared_memory.SharedMemory(name=shm_name)
     costs_t = np.ndarray(shape, dtype=np.float32, buffer=_WORKER_SHM.buf)
-    width = shape[2]
+    width = min(optional_width[0], shape[2]) if optional_width else shape[2]
     default_idx = np.arange(width, dtype=np.int32)
     cost = costs_t[i][:length]
+    if width < shape[2]:
+        # Same numbers as a buffer holding only `width` columns, laid out the same way for the solver
+        cost = np.ascontiguousarray(cost[:, :width])
     pred_idx = match_individual(SOLVERS[solver_name], cost, default_idx)
     if width < pred_dim:
         pred_idx = np.concatenate([pred_idx, np.arange(width, pred_dim, dtype=np.int32)])
     return pred_idx
+
+
+def _valid_query_width_on_device(query_valid_mask: torch.Tensor, lengths: torch.Tensor, pred_dim: int) -> torch.Tensor:
+    """_valid_query_width as a tensor on the masks' device, so it can be read later without waiting for the device."""
+    counts = query_valid_mask.sum(dim=1)
+    positions = torch.arange(pred_dim, device=query_valid_mask.device)
+    leading = (query_valid_mask == (positions.unsqueeze(0) < counts.unsqueeze(1))).all()
+    needed = torch.maximum(counts.max(), lengths.max() if lengths.numel() else lengths.new_zeros(())).clamp(max=pred_dim)
+    return torch.where(leading, needed, torch.full_like(needed, pred_dim)).to(torch.int32)
 
 
 def _valid_query_width(query_valid_mask: torch.Tensor, lengths_np: np.ndarray, pred_dim: int) -> int:
@@ -284,6 +332,121 @@ def match_multiprocess_prepared(
     return torch.from_numpy(np.stack(results, axis=0))
 
 
+def _get_dispatcher() -> ThreadPoolExecutor:
+    global _DISPATCHER  # noqa: PLW0603
+    with _POOL_LOCK:
+        if _DISPATCHER is None:
+            _DISPATCHER = ThreadPoolExecutor(max_workers=1, thread_name_prefix="matcher-dispatch")
+        return _DISPATCHER
+
+
+class LayerwiseMatching:
+    """Matching for a stack of cost matrices that become ready one at a time, e.g. one per decoder layer.
+
+    Each slot's costs are masked and transposed on their device and copied, without blocking, into that
+    slot's part of the shared-memory buffer (page-locked, so the copy runs in the background). A dispatcher
+    thread waits for the copy and hands the slot's solves to the process pool, so they run while the device
+    computes the next slots. Every solve reads the same numbers as match_multiprocess_prepared on the
+    stacked costs, so the indices are identical.
+    """
+
+    def __init__(self, solver_name: str, num_slots: int, object_valid_mask: torch.Tensor, n_jobs: int, trim_padded_queries: bool = False):
+        if solver_name not in SOLVERS:
+            raise ValueError(f"Unknown solver: {solver_name}. Available solvers: {list(SOLVERS.keys())}")
+        self.solver_name = solver_name
+        self.num_slots = num_slots
+        self.n_jobs = n_jobs
+        self.batch_size, self.num_target = object_valid_mask.shape
+        self.device = object_valid_mask.device
+        self.trim_padded_queries = trim_padded_queries
+
+        # The target counts are only read by the dispatcher, after the first slot's copy, so they can come
+        # over without blocking too: the copy is queued before the slots', on the same stream
+        self._lengths_device = object_valid_mask.detach().bool().sum(dim=1).to(torch.int32)
+        self._lengths = self._to_host(self._lengths_device)
+        # Number of query columns solved with trim_padded_queries, set from the first slot's query mask
+        self._width: torch.Tensor | None = None
+
+        self._shm: shared_memory.SharedMemory | None = None
+        self._shape: tuple[int, int, int] | None = None
+        self._pinned = False
+        self._sources: list[torch.Tensor] = []
+        self._pending: list[Future] = []
+
+    def _to_host(self, tensor: torch.Tensor) -> torch.Tensor:
+        """Copy to the host without blocking (into pinned memory), to be read only after a later slot's event."""
+        if self.device.type != "cuda":
+            return tensor
+        host = torch.empty(tensor.shape, dtype=tensor.dtype, pin_memory=True)
+        host.copy_(tensor, non_blocking=True)
+        return host
+
+    def _setup_buffer(self, pred_dim: int) -> None:
+        # All target rows are copied (the solver reads only the first `length`), so nothing has to wait for the counts
+        self._shape = (self.num_slots * self.batch_size, self.num_target, pred_dim)
+        self._shm = _get_shm_buffer(max(int(np.prod(self._shape)) * 4, 1))
+        self._buffer = torch.from_numpy(np.ndarray(self._shape, dtype=np.float32, buffer=self._shm.buf))
+        self._pinned = self.device.type == "cuda" and _pin_shm_buffer(self._shm)
+
+    def submit(self, slot: int, costs: torch.Tensor, query_valid_mask: torch.Tensor | None = None) -> None:
+        """Queue one slot's costs, shape [batch, pred, true], and the solves that need them.
+
+        Raises:
+            ValueError: If the costs' shape differs from the first slot's.
+        """
+        costs = costs.detach().to(torch.float32)
+        if self._shm is None:
+            self._setup_buffer(costs.shape[1])
+        if costs.shape[1:] != self._shape[1:][::-1]:
+            raise ValueError(f"Slot {slot} costs have shape {tuple(costs.shape)}, expected [*, {self._shape[2]}, {self._shape[1]}]")
+
+        # Padded queries get a high cost so they won't be matched to valid targets
+        if query_valid_mask is not None:
+            query_valid_mask = query_valid_mask.detach().bool().to(costs.device)
+            costs = costs.masked_fill(~query_valid_mask.unsqueeze(-1), float(np.finfo(np.float32).max / 10))
+            # Every slot has the same queries (one stack of layers), so the width is worked out once.
+            # All columns are still copied; the workers solve only the first `width` of them.
+            if self.trim_padded_queries and self._width is None:
+                self._width = self._to_host(_valid_query_width_on_device(query_valid_mask, self._lengths_device, costs.shape[1]))
+
+        # [batch, pred, true] -> [batch, true, pred]
+        costs_t = costs.transpose(1, 2).contiguous()
+        rows = slice(slot * self.batch_size, (slot + 1) * self.batch_size)
+        self._buffer[rows].copy_(costs_t, non_blocking=self._pinned)
+
+        event = None
+        if self._pinned:
+            event = torch.cuda.Event()
+            event.record()
+            # Keep the source alive until the copy has run
+            self._sources.append(costs_t)
+        self._pending.append(_get_dispatcher().submit(self._dispatch, event, slot))
+
+    def _dispatch(self, event: torch.cuda.Event | None, slot: int) -> list:
+        if event is not None:
+            event.synchronize()
+        lengths = self._lengths.numpy()
+        pool = _get_process_pool(self.n_jobs)
+        pred_dim = self._shape[2]
+        width = int(self._width) if self._width is not None else pred_dim
+        return [
+            pool.apply_async(
+                _mp_match_task_persistent,
+                ((self.solver_name, self._shm.name, self._shape, slot * self.batch_size + b, int(lengths[b]), pred_dim, width),),
+            )
+            for b in range(self.batch_size)
+        ]
+
+    def results(self) -> list[torch.Tensor]:
+        """Wait for every submitted slot; one [batch, pred] index tensor per slot, in submission order."""
+        out = [torch.from_numpy(np.stack([r.get() for r in pending.result()], axis=0)) for pending in self._pending]
+        self._sources.clear()
+        self._pending.clear()
+        # Drop the view so the buffer can be closed if it ever has to grow
+        self._buffer = None
+        return out
+
+
 class Matcher(nn.Module):
     def __init__(
         self,
@@ -295,6 +458,7 @@ class Matcher(nn.Module):
         n_jobs: int = 8,
         prepare_on_device: bool = False,
         trim_padded_queries: bool = False,
+        overlap_layers: bool = False,
         verbose: bool = False,
     ):
         super().__init__()
@@ -324,6 +488,10 @@ class Matcher(nn.Module):
             If true (needs prepare_on_device), padded query columns are dropped before solving, which makes
             the solve faster. Every target gets the same query, but with lap1015 the unmatched queries can
             come back in a different order (padded ones always last), so results are not bit-identical.
+        overlap_layers : bool
+            If true (needs prepare_on_device), a model can match each decoder layer's costs as soon as
+            they exist (start_layerwise), so the solves run while the GPU computes the later layers. The
+            matching is identical; only when the solves start changes. Combines with trim_padded_queries.
         verbose : bool
             If true, extra information on solver timing is printed.
         """
@@ -341,6 +509,9 @@ class Matcher(nn.Module):
         self.trim_padded_queries = trim_padded_queries
         if trim_padded_queries and not (prepare_on_device and parallel_solver and parallel_backend == "process"):
             raise ValueError("trim_padded_queries needs prepare_on_device=True, parallel_solver=True and parallel_backend='process'")
+        self.overlap_layers = overlap_layers
+        if overlap_layers and not (prepare_on_device and parallel_solver and parallel_backend == "process"):
+            raise ValueError("overlap_layers needs prepare_on_device=True, parallel_solver=True and parallel_backend='process'")
         self.step = 0
         self.verbose = verbose
 
@@ -381,6 +552,17 @@ class Matcher(nn.Module):
             idxs.append(pred_idx)
 
         return torch.from_numpy(np.stack(idxs))
+
+    def start_layerwise(self, object_valid_mask: torch.Tensor, num_slots: int) -> LayerwiseMatching | None:
+        """Start matching up to num_slots cost matrices one at a time, counting as one call of forward.
+
+        Returns None when the costs should go through forward instead: overlap_layers is off, or this
+        call is due an adaptive solver check, which times the solvers on all the costs at once.
+        """
+        if not self.overlap_layers or (self.adaptive_solver and self.step % self.adaptive_check_interval == 0):
+            return None
+        self.step += 1
+        return LayerwiseMatching(self.solver, num_slots, object_valid_mask, self.n_jobs, trim_padded_queries=self.trim_padded_queries)
 
     @torch.no_grad()
     def forward(self, costs, object_valid_mask=None, query_valid_mask=None):

@@ -167,7 +167,7 @@ def mask_focal_loss(pred_logits, targets, gamma=2.0, object_valid_mask=None, inp
     return loss.mean(-1).mean()
 
 
-def mask_focal_cost(pred_logits, targets, gamma=2.0, input_pad_mask=None, sample_weight=None):
+def mask_focal_cost(pred_logits, targets, gamma=2.0, input_pad_mask=None, sample_weight=None, single_product=False):
     """Compute focal costs for binary masks.
     Invalid objects are handled later in the matching process.
 
@@ -177,6 +177,10 @@ def mask_focal_cost(pred_logits, targets, gamma=2.0, input_pad_mask=None, sample
         gamma: Focusing parameter for the focal loss
         input_pad_mask: [batch_size, num_inputs] - mask indicating valid inputs
         sample_weight: Optional sample weights for each element (effectively the focal alpha)
+        single_product: If True, use sum(focal_neg) + (focal_pos - focal_neg) @ targets: the same cost with one matrix
+            product instead of two. Faster, but on real TrackML costs with TF32 it is less accurate: scored on the
+            float64 cost its matchings were worse in 27 of 32 layer matchings early in training (0.7% of particles
+            re-paired) and never better, so it is off by default and not recommended
 
     Returns:
         cost: [batch_size, num_objects, num_objects] - focal cost matrix
@@ -192,6 +196,8 @@ def mask_focal_cost(pred_logits, targets, gamma=2.0, input_pad_mask=None, sample
 
     # Context manager necessary to overwride global autocast to ensure float32 cost is returned
     with torch.autocast(device_type="cuda", enabled=False):
+        if single_product:
+            return focal_neg.sum(-1).unsqueeze(-1) + torch.einsum("bnc,bmc->bnm", focal_pos - focal_neg, targets)
         return torch.einsum("bnc,bmc->bnm", focal_pos, targets) + torch.einsum("bnc,bmc->bnm", focal_neg, (1 - targets))
 
 
