@@ -275,6 +275,11 @@ model:
                 dim: *dim
                 loss_weight: 1.0
 
+      # Faster loss indexing, bit-identical (fast_indexing.py), and matching costs for the real targets only
+      # (TF32 rounding differs with the smaller shape: near-tied matchings only). See the training-speedups branch
+      trim_target_costs: true
+      fast_permute: true
+      slice_valid_targets: true
       matcher:
         class_path: hepattn.models.matcher.Matcher
         init_args:
@@ -287,3 +292,5 @@ model:
           parallel_solver: true
           parallel_backend: process
           prepare_on_device: true  # identical matching, less copying (see matcher.py)
+          trim_padded_queries: true  # smaller solves; the unmatched valid queries get the no-object loss, in index order
+          overlap_layers: true  # each layer's solves start while the GPU computes the later layers; identical matching
