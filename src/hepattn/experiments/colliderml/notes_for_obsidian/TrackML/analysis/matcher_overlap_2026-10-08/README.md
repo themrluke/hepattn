@@ -16,3 +16,8 @@ Code: branches `matcher-layer-overlap` (`overlap_layers`, `trim_target_costs`, f
 | Import shim so scripts run the worktree's code while jobs use the main checkout | `shim/sitecustomize.py` (with `HEPATTN_SRC`) |
 
 Summaries: `python summarise.py timing`; `python gpu_gaps.py profile/late_overlaptrimrows.trace.json`.
+
+**14 Oct:** both branches were merged into `trackml-pix1p0` (`cec37f0`) and deleted, and the worktree
+`/shared/projects/hepattn-overlap` removed. The scripts still point at that worktree (`HEPATTN_SRC`, `sys.path`, the
+`hepattn-overlap` assertions); to rerun them, point those at `/shared/projects/hepattn` and drop the shim, since the
+main checkout now has all of this code.
