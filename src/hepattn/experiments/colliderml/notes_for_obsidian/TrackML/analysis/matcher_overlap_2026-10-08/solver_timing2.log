@@ -1,0 +1,22 @@
+  adaptive check (unmasked 4x3900x3900): scipy 11.718 s, lap1015_late 2.830 s | training call (masked, parallel): scipy 0.219 s, lap1015_late 0.364 s
+event 0: 3049 particles, 3810 valid queries; single solves scipy 0.157 s, lap1015_late 0.296 s
+  adaptive check (unmasked 4x3900x3900): scipy 17.805 s, lap1015_late 5.661 s | training call (masked, parallel): scipy 0.204 s, lap1015_late 0.303 s
+event 1: 2592 particles, 3248 valid queries; single solves scipy 0.115 s, lap1015_late 0.235 s
+  adaptive check (unmasked 4x3900x3900): scipy 14.551 s, lap1015_late 3.834 s | training call (masked, parallel): scipy 0.200 s, lap1015_late 0.372 s
+event 2: 2858 particles, 3569 valid queries; single solves scipy 0.182 s, lap1015_late 0.256 s
+  adaptive check (unmasked 4x3900x3900): scipy 19.604 s, lap1015_late 4.366 s | training call (masked, parallel): scipy 0.152 s, lap1015_late 0.275 s
+event 3: 2435 particles, 3053 valid queries; single solves scipy 0.099 s, lap1015_late 0.206 s
+early check: scipy / lap1015_late time ratio: min 3.15, median 3.97, max 4.49
+early train: scipy / lap1015_late time ratio: min 0.54, median 0.58, max 0.67
+early: 16 solves; scipy / lap1015_late time ratio: min 0.4, median 0.5, max 0.9
+  adaptive check (unmasked 4x3900x3900): scipy 9.749 s, lap1015_late 6.551 s | training call (masked, parallel): scipy 3.068 s, lap1015_late 0.114 s
+event 0: 3049 particles, 3362 valid queries; single solves scipy 0.056 s, lap1015_late 0.075 s
+  adaptive check (unmasked 4x3900x3900): scipy 13.273 s, lap1015_late 10.201 s | training call (masked, parallel): scipy 0.079 s, lap1015_late 0.096 s
+event 1: 2592 particles, 2831 valid queries; single solves scipy 0.047 s, lap1015_late 0.072 s
+  adaptive check (unmasked 4x3900x3900): scipy 10.876 s, lap1015_late 5.073 s | training call (masked, parallel): scipy 0.097 s, lap1015_late 0.099 s
+event 2: 2858 particles, 3162 valid queries; single solves scipy 0.055 s, lap1015_late 0.076 s
+  adaptive check (unmasked 4x3900x3900): scipy 14.888 s, lap1015_late 7.105 s | training call (masked, parallel): scipy 0.075 s, lap1015_late 0.098 s
+event 3: 2435 particles, 2722 valid queries; single solves scipy 0.043 s, lap1015_late 0.067 s
+late check: scipy / lap1015_late time ratio: min 1.30, median 1.79, max 2.14
+late train: scipy / lap1015_late time ratio: min 0.77, median 0.90, max 26.98
+late: 16 solves; scipy / lap1015_late time ratio: min 0.6, median 0.7, max 0.8

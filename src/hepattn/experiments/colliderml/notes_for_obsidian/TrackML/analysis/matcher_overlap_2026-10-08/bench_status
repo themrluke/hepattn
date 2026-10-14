@@ -1,0 +1,22 @@
+2026-10-11 11:28 GPU idle, starting
+2026-10-11 11:32 late prep rep1 exit=0
+2026-10-11 11:35 late trim rep1 exit=0
+2026-10-11 11:39 late overlap rep1 exit=0
+2026-10-11 11:45 late overlaptrim rep1 exit=0
+2026-10-11 11:48 late overlaptrimrows rep1 exit=0
+2026-10-11 11:51 late overlaptrimscipy rep1 exit=0
+2026-10-11 11:55 late prep rep2 exit=0
+2026-10-11 11:58 late trim rep2 exit=0
+2026-10-11 12:02 late overlap rep2 exit=0
+2026-10-11 12:06 late overlaptrim rep2 exit=0
+2026-10-11 12:09 late overlaptrimrows rep2 exit=0
+2026-10-11 12:12 late overlaptrimscipy rep2 exit=0
+2026-10-11 12:18 early prep rep1 exit=0
+2026-10-11 12:24 early trim rep1 exit=0
+2026-10-11 12:29 early overlap rep1 exit=0
+2026-10-11 12:34 early overlaptrim rep1 exit=0
+2026-10-11 12:38 early overlaptrimrows rep1 exit=0
+2026-10-11 12:42 early overlaptrimscipy rep1 exit=0
+2026-10-11 12:48 late prep repp exit=0
+2026-10-11 12:51 late overlaptrimrows repp exit=0
+2026-10-11 12:51 ALLDONE

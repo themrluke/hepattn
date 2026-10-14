@@ -1,0 +1,14 @@
+event 0: 3049 particles, 3810 valid queries; scipy 0.137 s, lap1015_late 0.280 s
+event 1: 2592 particles, 3248 valid queries; scipy 0.114 s, lap1015_late 0.239 s
+event 2: 2858 particles, 3569 valid queries; scipy 0.125 s, lap1015_late 0.241 s
+event 3: 2435 particles, 3053 valid queries; scipy 0.101 s, lap1015_late 0.212 s
+event 4: 2743 particles, 3351 valid queries; scipy 0.144 s, lap1015_late 0.249 s
+event 5: 2677 particles, 3365 valid queries; scipy 0.095 s, lap1015_late 0.199 s
+early: 24 solves; scipy / lap1015_late time ratio: min 0.4, median 0.5, max 0.7
+event 0: 3049 particles, 3362 valid queries; scipy 0.057 s, lap1015_late 0.075 s
+event 1: 2592 particles, 2831 valid queries; scipy 0.048 s, lap1015_late 0.070 s
+event 2: 2858 particles, 3162 valid queries; scipy 0.050 s, lap1015_late 0.071 s
+event 3: 2435 particles, 2722 valid queries; scipy 0.046 s, lap1015_late 0.068 s
+event 4: 2743 particles, 3002 valid queries; scipy 0.053 s, lap1015_late 0.082 s
+event 5: 2677 particles, 2957 valid queries; scipy 0.059 s, lap1015_late 0.078 s
+late: 24 solves; scipy / lap1015_late time ratio: min 0.5, median 0.7, max 0.8

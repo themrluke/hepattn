@@ -1,0 +1,2 @@
+early: 32 layer costs, bitwise identical 4, identical matching 18; max relative cost difference 1.1e+02; particles re-paired: mean 0.032%, max 0.182%; total cost of the trimmed matching vs the optimum (on the full costs): max +9.2e-08 relative
+late: 32 layer costs, bitwise identical 4, identical matching 32; max relative cost difference 9.9e+00; particles re-paired: mean 0.000%, max 0.000%; total cost of the trimmed matching vs the optimum (on the full costs): max +0.0e+00 relative

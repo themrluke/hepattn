@@ -1,0 +1,82 @@
+GPU time per step by call site (5 steps; total 115.6 ms/step)
+
+  34.92 ms/step  (no hepattn frame: aten::mm)
+          aten::mm 34.9
+  20.82 ms/step  (no hepattn frame: aten::_efficient_attention_backward)
+          aten::_efficient_attention_backward 20.8
+   7.85 ms/step  (no hepattn frame: aten::copy_)
+          aten::copy_ 7.9
+   7.46 ms/step  (no hepattn frame: aten::_index_put_impl_)
+          aten::_index_put_impl_ 7.5
+   7.39 ms/step  (no hepattn frame: aten::nonzero)
+          aten::nonzero 7.4
+   6.84 ms/step  (no hepattn frame: aten::index)
+          aten::index 6.8
+   6.79 ms/step  (no hepattn frame: aten::_efficient_attention_forward)
+          aten::_efficient_attention_forward 6.8
+   1.87 ms/step  (no hepattn frame: flash_attn::_flash_attn_backward)
+          flash_attn::_flash_attn_backward 1.9
+   1.21 ms/step  (no hepattn frame: triton_poi_fused_binary_cross_entropy_with_logits_mul_pow_rsub_sigmoid_unsqueeze_0)
+          triton_poi_fused_binary_cross_entropy_with_logits_mul_pow_rsub_sigmoid_unsqueeze_0 1.2
+   0.94 ms/step  (no hepattn frame: aten::mul)
+          aten::mul 0.9
+   0.89 ms/step  (no hepattn frame: flash_attn::_flash_attn_forward)
+          flash_attn::_flash_attn_forward 0.9
+   0.89 ms/step  (no hepattn frame: triton_poi_fused__to_copy_add_binary_cross_entropy_with_logits_div_expand_mul_neg_pow_rsub_sigmoid_sigmoid_backward_sub_sum_unsqueeze_view_0)
+          triton_poi_fused__to_copy_add_binary_cross_entropy_with_logits_div_expand_mul_neg_pow_rsub_sigmoid_sigmoid_backward_sub_sum_unsqueeze_view_0 0.9
+   0.84 ms/step  (no hepattn frame: aten::add_)
+          aten::add_ 0.8
+   0.76 ms/step  (no hepattn frame: aten::fill_)
+          aten::fill_ 0.8
+   0.74 ms/step  (no hepattn frame: triton_poi_fused_bitwise_and_constant_pad_nd_scalar_tensor_unsqueeze_where_5)
+          triton_poi_fused_bitwise_and_constant_pad_nd_scalar_tensor_unsqueeze_where_5 0.7
+   0.72 ms/step  (no hepattn frame: triton_poi_fused__to_copy_add_div_expand_mul_neg_sigmoid_sigmoid_backward_sum_unsqueeze_view_0)
+          triton_poi_fused__to_copy_add_div_expand_mul_neg_sigmoid_sigmoid_backward_sum_unsqueeze_view_0 0.7
+   0.66 ms/step  (no hepattn frame: aten::bmm)
+          aten::bmm 0.7
+   0.63 ms/step  (no hepattn frame: triton_red_fused__to_copy_add_binary_cross_entropy_with_logits_mul_pow_rsub_sigmoid_sum_unsqueeze_0)
+          triton_red_fused__to_copy_add_binary_cross_entropy_with_logits_mul_pow_rsub_sigmoid_sum_unsqueeze_0 0.6
+   0.59 ms/step  (no hepattn frame: triton_red_fused__to_copy_mul_sigmoid_sum_unsqueeze_0)
+          triton_red_fused__to_copy_mul_sigmoid_sum_unsqueeze_0 0.6
+   0.58 ms/step  (no hepattn frame: aten::where)
+          aten::where 0.6
+   0.56 ms/step  (no hepattn frame: triton_poi_fused_bitwise_not_bmm_expand_index_put_lift_fresh_permute_unsqueeze_view_5)
+          triton_poi_fused_bitwise_not_bmm_expand_index_put_lift_fresh_permute_unsqueeze_view_5 0.6
+   0.54 ms/step  (no hepattn frame: triton_red_fused__to_copy_add_native_layer_norm_backward_view_24)
+          triton_red_fused__to_copy_add_native_layer_norm_backward_view_24 0.5
+   0.51 ms/step  (no hepattn frame: triton_red_fused__to_copy_clone_empty_like_native_layer_norm_backward_select_squeeze_transpose_unsqueeze_view_17)
+          triton_red_fused__to_copy_clone_empty_like_native_layer_norm_backward_select_squeeze_transpose_unsqueeze_view_17 0.5
+   0.51 ms/step  (no hepattn frame: triton_red_fused__to_copy_clone_empty_like_native_layer_norm_backward_select_squeeze_transpose_unsqueeze_view_19)
+          triton_red_fused__to_copy_clone_empty_like_native_layer_norm_backward_select_squeeze_transpose_unsqueeze_view_19 0.5
+   0.51 ms/step  (no hepattn frame: triton_red_fused__to_copy_clone_empty_like_native_layer_norm_backward_select_squeeze_transpose_unsqueeze_view_15)
+          triton_red_fused__to_copy_clone_empty_like_native_layer_norm_backward_select_squeeze_transpose_unsqueeze_view_15 0.5
+   0.50 ms/step  (no hepattn frame: aten::add)
+          aten::add 0.5
+   0.46 ms/step  (no hepattn frame: triton_poi_fused_rsub_1)
+          triton_poi_fused_rsub_1 0.5
+   0.43 ms/step  (no hepattn frame: triton_poi_fused_bmm_index_put_permute_view_zeros_0)
+          triton_poi_fused_bmm_index_put_permute_view_zeros_0 0.4
+   0.38 ms/step  (no hepattn frame: aten::addmm)
+          aten::addmm 0.4
+   0.38 ms/step  (no hepattn frame: triton_red_fused__to_copy_sum_1)
+          triton_red_fused__to_copy_sum_1 0.4
+   0.35 ms/step  (no hepattn frame: aten::sum)
+          aten::sum 0.3
+   0.34 ms/step  (no hepattn frame: triton_poi_fused_sigmoid_0)
+          triton_poi_fused_sigmoid_0 0.3
+   0.34 ms/step  (no hepattn frame: triton_poi_fused_add_cat_fill_mul_sigmoid_silu_split_sub_view_5)
+          triton_poi_fused_add_cat_fill_mul_sigmoid_silu_split_sub_view_5 0.3
+   0.34 ms/step  (no hepattn frame: triton_red_fused_add_div_mul_sigmoid_sum_unsqueeze_0)
+          triton_red_fused_add_div_mul_sigmoid_sum_unsqueeze_0 0.3
+   0.33 ms/step  (no hepattn frame: aten::sub)
+          aten::sub 0.3
+   0.31 ms/step  (no hepattn frame: aten::masked_fill_)
+          aten::masked_fill_ 0.3
+   0.31 ms/step  (no hepattn frame: cudaPointerGetAttributes)
+          cudaPointerGetAttributes 0.3
+   0.28 ms/step  (no hepattn frame: aten::bitwise_not)
+          aten::bitwise_not 0.3
+   0.19 ms/step  (no hepattn frame: triton_red_fused__to_copy__unsafe_view_clone_native_layer_norm_native_layer_norm_backward_select_squeeze_transpose_unsqueeze_view_7)
+          triton_red_fused__to_copy__unsafe_view_clone_native_layer_norm_native_layer_norm_backward_select_squeeze_transpose_unsqueeze_view_7 0.2
+   0.19 ms/step  (no hepattn frame: aten::all)
+          aten::all 0.2

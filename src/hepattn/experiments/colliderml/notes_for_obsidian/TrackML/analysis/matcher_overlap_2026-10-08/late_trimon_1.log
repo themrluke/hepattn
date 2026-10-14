@@ -1,0 +1,23 @@
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/lightning/pytorch/cli.py:544: LightningCLI's args parameter is intended to run from within Python like if it were from the command line. To prevent mistakes it is not recommended to provide both args and command line arguments, got: sys.argv[1:]=['/shared/projects/hepattn/src/hepattn/experiments/trackml/logs/TRK-Pix0.6-DQMA-flex_20261005-T152222/ckpts/epoch=029-val_loss=0.32403.ckpt', '8', 'trimon', 'late_trimon_1.pt'], args=['--config', '/tmp/ljohnson/tmp_o0ibzf0.yaml'].
+Seed set to 42
+Using bfloat16 Automatic Mixed Precision (AMP)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+Using hit eval dataset /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_train_eval.h5
+Using hit eval dataset /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_val_eval.h5
+Created training dataset with 8,543 events
+Created validation dataset with 100 events
+W1008 15:28:13.468000 1033009 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [13/1] _maybe_guard_rel() was called on non-relation expression Eq(s34, s93) | Eq(s93, 1)
+W1008 15:28:15.147000 1033009 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [13/1_1] _maybe_guard_rel() was called on non-relation expression Eq(s34, s93) | Eq(s93, 1)
+event 0: loss 0.404077, 4 layers matched
+W1008 15:28:21.679000 1033009 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1008 15:28:29.380000 1033009 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/1_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+event 1: loss 0.348406, 4 layers matched
+event 2: loss 0.354548, 4 layers matched
+event 3: loss 0.360916, 4 layers matched
+event 4: loss 0.356570, 4 layers matched
+event 5: loss 0.423337, 4 layers matched
+event 6: loss 0.376994, 4 layers matched
+event 7: loss 0.362170, 4 layers matched
