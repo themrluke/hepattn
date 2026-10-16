@@ -4,8 +4,10 @@
 cd /shared/projects/hepattn/src/hepattn/experiments/trackml
 P=/shared/projects/hepattn/.pixi/envs/default/bin/python
 tag=$1; glob=$2; trainlog=$3; testcfg=$4
-until grep -q -E 'max_epochs=30. reached|Traceback' "$trainlog"; do sleep 300; done
-grep -q Traceback "$trainlog" && { echo "$(date '+%F %H:%M') $tag training FAILED, not evaluated" >> eval_results/auto_eval.log; exit 1; }
+# Only the current attempt counts: the part of the log after the last "=== ... resuming" marker (sweep_runs/resume_run.sh)
+attempt() { tac "$1" | sed '/^=== .*resuming/q'; }
+until attempt "$trainlog" | grep -q -E 'max_epochs=30. reached|Traceback'; do sleep 300; done
+attempt "$trainlog" | grep -q Traceback && { echo "$(date '+%F %H:%M') $tag training FAILED, not evaluated" >> eval_results/auto_eval.log; exit 1; }
 sleep 120
 best=$(ls $glob/ckpts/epoch=*-val_loss=*.ckpt | awk -F'val_loss=' '{v=$2; sub(/\.ckpt$/,"",v); print v, $0}' | sort -g | head -1 | cut -d' ' -f2-)
 echo "$(date '+%F %H:%M') $tag finished; best checkpoint $best" >> eval_results/auto_eval.log

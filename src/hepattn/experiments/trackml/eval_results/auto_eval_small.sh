@@ -10,8 +10,9 @@ while true; do
     [ -f eval_results/${name}_iou0.5.txt ] || [ -f eval_results/${name}.failed ] && continue
     left=$((left + 1))
     log=logs/TRK-Pix0.6-DQMA-${name}_full.out
-    [ -f "$log" ] && grep -q -E 'max_epochs=30. reached|Traceback' "$log" || continue
-    if grep -q Traceback "$log"; then
+    # Only the current attempt counts: the log after the last "=== ... resuming" marker (sweep_runs/resume_run.sh)
+    [ -f "$log" ] && tac "$log" | sed '/^=== .*resuming/q' | grep -q -E 'max_epochs=30. reached|Traceback' || continue
+    if tac "$log" | sed '/^=== .*resuming/q' | grep -q Traceback; then
       echo "$(date '+%F %H:%M') $name training FAILED, not evaluated" >> eval_results/auto_eval.log
       touch eval_results/${name}.failed
       continue
