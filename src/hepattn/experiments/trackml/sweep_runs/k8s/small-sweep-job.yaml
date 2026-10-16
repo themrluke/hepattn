@@ -32,9 +32,12 @@ spec:
         command: ["bash", "-c"]
         args:
         - |
-          eval_results/auto_eval_small.sh > eval_results/auto_eval_small.out 2>&1 &
-          sweep_runs/queue_small_job.sh
+          # explicit cd: the EOS-home pod default overrides workingDir
+          cd /shared/projects/hepattn/src/hepattn/experiments/trackml || exit 1
+          bash eval_results/auto_eval_small.sh > eval_results/auto_eval_small.out 2>&1 &
+          bash sweep_runs/queue_small_job.sh; rc=$?
           wait
+          exit $rc
         resources:
           # Same as the notebook session: one H100 with its 46 CPUs (even, as the nodes need) and 180 GB
           requests: {cpu: "46", memory: 180G, nvidia.com/gpu: 1}
