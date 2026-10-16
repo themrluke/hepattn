@@ -1,0 +1,52 @@
+# Runs the small-window sweep queue (two trainings at a time on one H100) and its evaluation loop as a Kubernetes Job,
+# instead of in the notebook session. Jobs get the same 1-day default lifetime as sessions; the `lifetime` label raises
+# it to the maximum the cluster accepts, 7d (14d is rejected). The queue is restart-safe: if the job is stopped,
+# submitting it again resumes every interrupted run from its latest checkpoint, in the same Comet experiment.
+#
+#   kubectl create -f sweep_runs/k8s/small-sweep-job.yaml      # submit (stop any queue in the notebook first)
+#   kubectl get pods -n ljohnson -l job-name=small-sweep         # status
+#   kubectl logs -n ljohnson job/small-sweep -c train -f          # queue output (runs log to logs/*_full.out as before)
+#   kubectl delete job small-sweep -n ljohnson                   # stop (trainings resume on resubmission)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: small-sweep
+  namespace: ljohnson
+spec:
+  backoffLimit: 3            # a crashed container restarts the script, which resumes the runs
+  template:
+    metadata:
+      labels:
+        lifetime: "7d"
+        mount-eos: "true"
+        mount-cvmfs: "true"
+        home: "eos"
+    spec:
+      restartPolicy: OnFailure
+      securityContext: {runAsUser: 173047, runAsGroup: 1307}
+      nodeSelector: {nvidia.com/gpu.product: NVIDIA-H100-NVL}
+      containers:
+      - name: train
+        image: registry.cern.ch/ngt/lxplus-like:9
+        workingDir: /shared/projects/hepattn/src/hepattn/experiments/trackml
+        command: ["bash", "-c"]
+        args:
+        - |
+          eval_results/auto_eval_small.sh > eval_results/auto_eval_small.out 2>&1 &
+          sweep_runs/queue_small_job.sh
+          wait
+        resources:
+          # Same as the notebook session: one H100 with its 46 CPUs (even, as the nodes need) and 180 GB
+          requests: {cpu: "46", memory: 180G, nvidia.com/gpu: 1}
+          limits: {cpu: "46", memory: 180G, nvidia.com/gpu: 1}
+        volumeMounts:
+        - {name: shared, mountPath: /shared}
+        - {name: dshm, mountPath: /dev/shm}          # matcher shared-memory buffers and DataLoader workers
+        - {name: scratch, mountPath: /scratch}
+      volumes:
+      - name: shared
+        persistentVolumeClaim: {claimName: shared}
+      - name: dshm
+        emptyDir: {medium: Memory}
+      - name: scratch
+        emptyDir: {sizeLimit: 450G}
