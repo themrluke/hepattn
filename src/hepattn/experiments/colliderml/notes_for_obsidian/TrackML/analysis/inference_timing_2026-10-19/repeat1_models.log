@@ -1,0 +1,118 @@
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/lightning/pytorch/cli.py:544: LightningCLI's args parameter is intended to run from within Python like if it were from the command line. To prevent mistakes it is not recommended to provide both args and command line arguments, got: sys.argv[1:]=['1', 'results_repeat1.json', 'models'], args=['--config', '/tmp/ljohnson/tmp3r1ju3zq.yaml'].
+Seed set to 42
+Using bfloat16 Automatic Mixed Precision (AMP)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+Using hit eval dataset /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_train_eval.h5
+Using hit eval dataset /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_test_eval.h5
+Created test dataset with 100 events
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/lightning/pytorch/cli.py:544: LightningCLI's args parameter is intended to run from within Python like if it were from the command line. To prevent mistakes it is not recommended to provide both args and command line arguments, got: sys.argv[1:]=['1', 'results_repeat1.json', 'models'], args=['--config', '/tmp/ljohnson/tmpk20qt_1x.yaml'].
+Seed set to 42
+Using bfloat16 Automatic Mixed Precision (AMP)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+W1019 12:37:51.718000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [11/1] _maybe_guard_rel() was called on non-relation expression Eq(s34, s93) | Eq(s93, 1)
+W1019 12:37:52.826000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [11/1_1] _maybe_guard_rel() was called on non-relation expression Eq(s34, s93) | Eq(s93, 1)
+W1019 12:37:58.555000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:38:03.721000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/1_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+model flex w512: total mean 34.2 ms (min 24.9); encoder 4.2, decoder 28.1; 2679 queries
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/lightning/pytorch/cli.py:544: LightningCLI's args parameter is intended to run from within Python like if it were from the command line. To prevent mistakes it is not recommended to provide both args and command line arguments, got: sys.argv[1:]=['1', 'results_repeat1.json', 'models'], args=['--config', '/tmp/ljohnson/tmp5vf2p6cx.yaml'].
+Seed set to 42
+Using bfloat16 Automatic Mixed Precision (AMP)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+W1019 12:38:11.186000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/2] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:38:11.199000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/2] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:38:11.236000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/2_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:38:11.246000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/2_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:38:12.334000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [15/0] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+W1019 12:38:12.711000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [15/0_1] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/torch/nn/attention/flex_attention.py:1622: FutureWarning: return_lse is deprecated and will be removed in v2.10. Please use return_aux=AuxRequest(lse=True) instead.
+  _warn_once(
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/torch/_inductor/lowering.py:7242: UserWarning: 
+Online softmax is disabled on the fly since Inductor decides to
+split the reduction. Cut an issue to PyTorch if this is an
+important use case and you want to speed it up with online
+softmax.
+
+  warnings.warn(
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/torch/_inductor/lowering.py:7242: UserWarning: 
+Online softmax is disabled on the fly since Inductor decides to
+split the reduction. Cut an issue to PyTorch if this is an
+important use case and you want to speed it up with online
+softmax.
+
+  warnings.warn(
+W1019 12:38:32.830000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/3] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:38:32.844000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/3] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:38:33.522000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/3] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+W1019 12:38:41.150000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/3_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:38:41.160000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/3_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:38:41.783000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/3_1] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+model OR w512: total mean 46.9 ms (min 36.4); encoder 16.6, decoder 28.2; 2691 queries
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/lightning/pytorch/cli.py:544: LightningCLI's args parameter is intended to run from within Python like if it were from the command line. To prevent mistakes it is not recommended to provide both args and command line arguments, got: sys.argv[1:]=['1', 'results_repeat1.json', 'models'], args=['--config', '/tmp/ljohnson/tmp0j14pt4p.yaml'].
+Seed set to 42
+Using bfloat16 Automatic Mixed Precision (AMP)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+W1019 12:38:50.768000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/4] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:38:50.798000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/4_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:38:50.905000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/5] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:38:56.245000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/5_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+model flex w64: total mean 34.1 ms (min 24.9); encoder 4.1, decoder 28.1; 2869 queries
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/lightning/pytorch/cli.py:544: LightningCLI's args parameter is intended to run from within Python like if it were from the command line. To prevent mistakes it is not recommended to provide both args and command line arguments, got: sys.argv[1:]=['1', 'results_repeat1.json', 'models'], args=['--config', '/tmp/ljohnson/tmp8ia7pvr2.yaml'].
+Seed set to 42
+Using bfloat16 Automatic Mixed Precision (AMP)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+W1019 12:39:03.651000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/6] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:39:03.662000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/6] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:39:03.690000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/6_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:39:03.700000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/6_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:39:03.830000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/7] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:39:03.841000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/7] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:39:04.475000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/7] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+W1019 12:39:12.129000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/7_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:39:12.139000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/7_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:39:12.762000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/7_1] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+model OR w64: total mean 46.5 ms (min 36.0); encoder 16.3, decoder 28.2; 2758 queries
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/lightning/pytorch/cli.py:544: LightningCLI's args parameter is intended to run from within Python like if it were from the command line. To prevent mistakes it is not recommended to provide both args and command line arguments, got: sys.argv[1:]=['1', 'results_repeat1.json', 'models'], args=['--config', '/tmp/ljohnson/tmp6yd8rbcs.yaml'].
+Seed set to 42
+Using bfloat16 Automatic Mixed Precision (AMP)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+W1019 12:39:21.527000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/8] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:39:21.556000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/8_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:39:22.451000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/9] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:39:27.034000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/9_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+model flex w32: total mean 34.1 ms (min 25.0); encoder 4.1, decoder 28.1; 2907 queries
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/lightning/pytorch/cli.py:544: LightningCLI's args parameter is intended to run from within Python like if it were from the command line. To prevent mistakes it is not recommended to provide both args and command line arguments, got: sys.argv[1:]=['1', 'results_repeat1.json', 'models'], args=['--config', '/tmp/ljohnson/tmpxpk8eiaw.yaml'].
+Seed set to 42
+Using bfloat16 Automatic Mixed Precision (AMP)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+W1019 12:39:34.298000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/10] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:39:34.309000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/10] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:39:34.337000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/10_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:39:34.347000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/10_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:39:34.492000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/11] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:39:34.502000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/11] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:39:35.134000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/11] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+W1019 12:39:42.855000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/11_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:39:42.865000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/11_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:39:43.493000 20718 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [0/11_1] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+model OR w32: total mean 46.5 ms (min 36.0); encoder 16.3, decoder 28.2; 2806 queries

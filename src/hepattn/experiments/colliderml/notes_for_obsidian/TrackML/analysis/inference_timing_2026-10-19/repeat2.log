@@ -1,0 +1,335 @@
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/lightning/pytorch/cli.py:544: LightningCLI's args parameter is intended to run from within Python like if it were from the command line. To prevent mistakes it is not recommended to provide both args and command line arguments, got: sys.argv[1:]=['2', 'results_repeat2.json'], args=['--config', '/tmp/ljohnson/tmplt66_8m_.yaml'].
+Seed set to 42
+Using bfloat16 Automatic Mixed Precision (AMP)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+Using hit eval dataset /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_train_eval.h5
+Using hit eval dataset /eos/user/l/ljohnson/datasets/TrackML_UCL/filter_evals/eta4pt600/epoch=070-val_loss=0.20153_test_eval.h5
+Created test dataset with 100 events
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/torch/nn/attention/flex_attention.py:1622: FutureWarning: return_lse is deprecated and will be removed in v2.10. Please use return_aux=AuxRequest(lse=True) instead.
+  _warn_once(
+W1019 12:01:05.577000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:01:05.591000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:01:10.150000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/1_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:01:10.162000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/1_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+encoder flex w512 block128 depth8: mean 4.16 ms, min 3.05 ms, compiles while timing 0
+W1019 12:01:14.392000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/2] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:01:14.402000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/2] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+encoder flex w512 block64 depth8: mean 3.87 ms, min 2.79 ms, compiles while timing 0
+W1019 12:01:18.773000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/3] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:01:18.785000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/3] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+encoder flex w512 block32 depth8: mean 981.55 ms, min 497.70 ms, compiles while timing 0
+W1019 12:02:51.322000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/4] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:02:51.336000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/4] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+encoder flex w512 block16 depth8: mean 229.45 ms, min 117.78 ms, compiles while timing 0
+W1019 12:03:14.763000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/5] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:03:14.778000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/5] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:03:14.806000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/5_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:03:14.816000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/5_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:03:14.922000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/6] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:03:14.932000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/6] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:03:19.957000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/6_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:03:19.967000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/6_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+encoder flex w256 block128 depth8: mean 3.88 ms, min 2.79 ms, compiles while timing 0
+W1019 12:03:22.879000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/7] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:03:22.889000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/7] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+encoder flex w256 block64 depth8: mean 3.59 ms, min 2.59 ms, compiles while timing 0
+W1019 12:03:26.346000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/8] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:03:26.356000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/8] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+encoder flex w256 block32 depth8: mean 980.73 ms, min 497.08 ms, compiles while timing 0
+W1019 12:04:57.833000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/9] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:04:57.845000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/9] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+encoder flex w256 block16 depth8: mean 229.65 ms, min 117.58 ms, compiles while timing 0
+W1019 12:05:21.174000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/10] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:05:21.185000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/10] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:05:21.210000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/10_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:05:21.220000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/10_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:05:21.329000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/11] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:05:21.339000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/11] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:05:26.357000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/11_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:05:26.366000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/11_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+encoder flex w128 block128 depth8: mean 4.06 ms, min 2.90 ms, compiles while timing 0
+W1019 12:05:29.311000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/12] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:05:29.322000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/12] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+encoder flex w128 block64 depth8: mean 3.49 ms, min 2.51 ms, compiles while timing 0
+W1019 12:05:32.241000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/13] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:05:32.252000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/13] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+encoder flex w128 block32 depth8: mean 982.61 ms, min 497.97 ms, compiles while timing 0
+W1019 12:07:04.496000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/14] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:07:04.507000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/14] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+encoder flex w128 block16 depth8: mean 187.54 ms, min 96.74 ms, compiles while timing 0
+W1019 12:07:24.020000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/15] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:07:24.031000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/15] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:07:24.056000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/15_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:07:24.066000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/15_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:07:24.183000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/16] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:07:24.192000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/16] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:07:29.284000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/16_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:07:29.294000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/16_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+encoder flex w64 block128 depth8: mean 4.05 ms, min 2.91 ms, compiles while timing 0
+W1019 12:07:32.221000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/17] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:07:32.231000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/17] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+encoder flex w64 block64 depth8: mean 3.56 ms, min 2.57 ms, compiles while timing 0
+W1019 12:07:35.148000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/18] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:07:35.158000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/18] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+encoder flex w64 block32 depth8: mean 980.75 ms, min 496.95 ms, compiles while timing 0
+W1019 12:09:06.634000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/19] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:09:06.645000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/19] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+encoder flex w64 block16 depth8: mean 221.86 ms, min 113.19 ms, compiles while timing 0
+W1019 12:09:29.280000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/20] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:09:29.290000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/20] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:09:29.315000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/20_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:09:29.325000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/20_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:09:29.647000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/21] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:09:29.663000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/21] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:09:34.881000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/21_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:09:34.891000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/21_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+encoder flex w32 block128 depth8: mean 4.03 ms, min 2.90 ms, compiles while timing 0
+W1019 12:09:37.815000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/22] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:09:37.826000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/22] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+encoder flex w32 block64 depth8: mean 3.56 ms, min 2.57 ms, compiles while timing 0
+W1019 12:09:40.790000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/23] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:09:40.801000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/23] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+encoder flex w32 block32 depth8: mean 981.44 ms, min 497.28 ms, compiles while timing 0
+W1019 12:11:13.142000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/24] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:11:13.154000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/24] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+encoder flex w32 block16 depth8: mean 214.16 ms, min 109.19 ms, compiles while timing 0
+W1019 12:11:35.136000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/25] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:11:35.145000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/25] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:11:35.173000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/25_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:11:35.181000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/25_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:11:36.380000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [6/0] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+W1019 12:11:36.708000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [6/0_1] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+W1019 12:11:39.867000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/26] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:11:39.877000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/26] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:11:40.536000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/26] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+W1019 12:11:48.048000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/26_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:11:48.057000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/26_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:11:48.674000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/26_1] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+encoder or w512 block128 depth8: mean 16.62 ms, min 14.10 ms, compiles while timing 0
+W1019 12:11:54.521000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/27] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:11:54.531000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/27] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:11:55.195000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/27] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+encoder or w512 block64 depth8: mean 17.01 ms, min 14.39 ms, compiles while timing 0
+W1019 12:12:02.070000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/28] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:12:02.080000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/28] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:12:02.743000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/28] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+encoder or w512 block32 depth8: mean 262.09 ms, min 138.76 ms, compiles while timing 0
+W1019 12:12:30.864000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/29] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:12:30.875000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/29] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:12:31.540000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/29] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+encoder or w512 block16 depth8: mean 53.90 ms, min 34.65 ms, compiles while timing 0
+W1019 12:12:39.321000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/30] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:12:39.331000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/30] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:12:39.358000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/30_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:12:39.366000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/30_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:12:39.521000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/31] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:12:39.530000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/31] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:12:40.190000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/31] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+W1019 12:12:47.878000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/31_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:12:47.887000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/31_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:12:48.510000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/31_1] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+encoder or w256 block128 depth8: mean 15.92 ms, min 13.65 ms, compiles while timing 0
+W1019 12:12:52.898000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/32] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:12:52.908000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/32] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:12:53.574000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/32] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+encoder or w256 block64 depth8: mean 16.23 ms, min 13.82 ms, compiles while timing 0
+W1019 12:12:59.189000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/33] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:12:59.199000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/33] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:12:59.860000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/33] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+encoder or w256 block32 depth8: mean 260.11 ms, min 137.43 ms, compiles while timing 0
+W1019 12:13:26.392000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/34] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:13:26.403000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/34] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:13:27.068000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/34] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+encoder or w256 block16 depth8: mean 48.94 ms, min 31.08 ms, compiles while timing 0
+W1019 12:13:34.458000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/35] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:13:34.469000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/35] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:13:34.495000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/35_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:13:34.503000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/35_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:13:34.671000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/36] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:13:34.679000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/36] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:13:35.330000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/36] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+W1019 12:13:43.271000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/36_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:13:43.279000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/36_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:13:43.900000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/36_1] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+encoder or w128 block128 depth8: mean 16.31 ms, min 13.90 ms, compiles while timing 0
+W1019 12:13:48.337000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/37] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:13:48.347000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/37] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:13:49.012000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/37] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+encoder or w128 block64 depth8: mean 15.81 ms, min 13.51 ms, compiles while timing 0
+W1019 12:13:53.452000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/38] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:13:53.462000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/38] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:13:54.114000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/38] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+encoder or w128 block32 depth8: mean 259.33 ms, min 136.87 ms, compiles while timing 0
+W1019 12:14:20.559000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/39] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:14:20.570000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/39] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:14:21.228000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/39] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+encoder or w128 block16 depth8: mean 46.47 ms, min 29.31 ms, compiles while timing 0
+W1019 12:14:28.333000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/40] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:14:28.343000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/40] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:14:28.369000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/40_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:14:28.377000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/40_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:14:28.551000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/41] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:14:28.559000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/41] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:14:29.212000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/41] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+W1019 12:14:37.399000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/41_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:14:37.407000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/41_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:14:38.027000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/41_1] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+encoder or w64 block128 depth8: mean 16.32 ms, min 13.92 ms, compiles while timing 0
+W1019 12:14:42.477000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/42] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:14:42.487000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/42] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:14:43.148000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/42] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+encoder or w64 block64 depth8: mean 16.21 ms, min 13.79 ms, compiles while timing 0
+W1019 12:14:47.638000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/43] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:14:47.648000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/43] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:14:48.300000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/43] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+encoder or w64 block32 depth8: mean 259.11 ms, min 136.66 ms, compiles while timing 0
+W1019 12:15:14.741000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/44] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:15:14.752000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/44] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:15:15.422000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/44] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+encoder or w64 block16 depth8: mean 45.29 ms, min 28.46 ms, compiles while timing 0
+W1019 12:15:22.452000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/45] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:15:22.462000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/45] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:15:22.488000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/45_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:15:22.497000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/45_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:15:22.683000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/46] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:15:22.692000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/46] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:15:24.898000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/46] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+W1019 12:15:31.667000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/46_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:15:31.676000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/46_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:15:32.304000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/46_1] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+encoder or w32 block128 depth8: mean 16.32 ms, min 13.93 ms, compiles while timing 0
+W1019 12:15:36.789000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/47] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:15:36.800000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/47] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:15:37.461000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/47] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+encoder or w32 block64 depth8: mean 16.22 ms, min 13.81 ms, compiles while timing 0
+W1019 12:15:41.958000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/48] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:15:41.968000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/48] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:15:42.631000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/48] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+encoder or w32 block32 depth8: mean 247.65 ms, min 130.95 ms, compiles while timing 0
+W1019 12:16:08.047000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/49] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:16:08.057000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/49] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:16:10.356000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/49] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+encoder or w32 block16 depth8: mean 44.76 ms, min 28.07 ms, compiles while timing 0
+W1019 12:16:17.328000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/50] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:16:17.339000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/50] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+encoder flex w512 block128 depth2: mean 2.04 ms, min 1.39 ms, compiles while timing 0
+W1019 12:16:19.237000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/51] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:16:19.247000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/51] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+encoder flex w512 block128 depth4: mean 2.75 ms, min 1.92 ms, compiles while timing 0
+W1019 12:16:21.498000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/52] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:16:21.508000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/52] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+encoder flex w64 block128 depth2: mean 2.00 ms, min 1.34 ms, compiles while timing 0
+W1019 12:16:23.368000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/53] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:16:23.379000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/53] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+encoder flex w64 block128 depth4: mean 2.68 ms, min 1.85 ms, compiles while timing 0
+W1019 12:16:25.638000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/54] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:16:25.647000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/54] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:16:26.284000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/54] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+encoder or w512 block128 depth2: mean 5.03 ms, min 4.09 ms, compiles while timing 0
+W1019 12:16:28.176000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/55] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:16:28.185000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/55] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:16:28.829000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/55] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+encoder or w512 block128 depth4: mean 8.90 ms, min 7.46 ms, compiles while timing 0
+W1019 12:16:31.593000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/56] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:16:31.602000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/56] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:16:32.239000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/56] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+encoder or w64 block128 depth2: mean 4.95 ms, min 4.04 ms, compiles while timing 0
+W1019 12:16:34.127000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/57] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:16:34.136000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/57] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:16:34.780000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/57] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+encoder or w64 block128 depth4: mean 8.72 ms, min 7.30 ms, compiles while timing 0
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/lightning/pytorch/cli.py:544: LightningCLI's args parameter is intended to run from within Python like if it were from the command line. To prevent mistakes it is not recommended to provide both args and command line arguments, got: sys.argv[1:]=['2', 'results_repeat2.json'], args=['--config', '/tmp/ljohnson/tmpoxrdjdek.yaml'].
+Seed set to 42
+Using bfloat16 Automatic Mixed Precision (AMP)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+W1019 12:16:39.792000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/58] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:16:39.819000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/58_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:16:45.018000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [17/1] _maybe_guard_rel() was called on non-relation expression Eq(s34, s93) | Eq(s93, 1)
+W1019 12:16:46.126000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [17/1_1] _maybe_guard_rel() was called on non-relation expression Eq(s34, s93) | Eq(s93, 1)
+W1019 12:16:46.698000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/59] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:16:51.248000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/59_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+model flex w512: FAILED ValueError: Both events must be recorded before calculating elapsed time.
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/lightning/pytorch/cli.py:544: LightningCLI's args parameter is intended to run from within Python like if it were from the command line. To prevent mistakes it is not recommended to provide both args and command line arguments, got: sys.argv[1:]=['2', 'results_repeat2.json'], args=['--config', '/tmp/ljohnson/tmpori4kugc.yaml'].
+Seed set to 42
+Using bfloat16 Automatic Mixed Precision (AMP)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+W1019 12:16:57.141000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/60] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:16:57.152000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/60] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:16:57.184000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/60_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:16:57.194000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/60_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:16:57.412000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/61] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:16:57.421000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/61] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:16:58.059000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/61] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+W1019 12:17:06.412000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/61_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:17:06.422000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/61_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:17:07.049000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/61_1] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+model OR w512: FAILED ValueError: Both events must be recorded before calculating elapsed time.
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/lightning/pytorch/cli.py:544: LightningCLI's args parameter is intended to run from within Python like if it were from the command line. To prevent mistakes it is not recommended to provide both args and command line arguments, got: sys.argv[1:]=['2', 'results_repeat2.json'], args=['--config', '/tmp/ljohnson/tmpier4wndh.yaml'].
+Seed set to 42
+Using bfloat16 Automatic Mixed Precision (AMP)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+W1019 12:17:13.838000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/62] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:17:13.864000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/62_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:17:14.054000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/63] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:17:18.509000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/63_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+model flex w64: FAILED ValueError: Both events must be recorded before calculating elapsed time.
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/lightning/pytorch/cli.py:544: LightningCLI's args parameter is intended to run from within Python like if it were from the command line. To prevent mistakes it is not recommended to provide both args and command line arguments, got: sys.argv[1:]=['2', 'results_repeat2.json'], args=['--config', '/tmp/ljohnson/tmpuxxatpqc.yaml'].
+Seed set to 42
+Using bfloat16 Automatic Mixed Precision (AMP)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+W1019 12:17:24.331000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/64] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:17:24.340000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/64] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:17:24.367000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/64_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:17:24.376000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/64_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:17:24.606000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/65] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:17:24.615000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/65] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:17:25.243000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/65] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+W1019 12:17:33.932000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/65_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:17:33.941000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/65_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:17:34.567000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/65_1] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+model OR w64: FAILED ValueError: Both events must be recorded before calculating elapsed time.
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/lightning/pytorch/cli.py:544: LightningCLI's args parameter is intended to run from within Python like if it were from the command line. To prevent mistakes it is not recommended to provide both args and command line arguments, got: sys.argv[1:]=['2', 'results_repeat2.json'], args=['--config', '/tmp/ljohnson/tmp8zsybcjz.yaml'].
+Seed set to 42
+Using bfloat16 Automatic Mixed Precision (AMP)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+W1019 12:17:41.407000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/66] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:17:41.433000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/66_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:17:41.642000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/67] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:17:46.088000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/67_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+model flex w32: FAILED ValueError: Both events must be recorded before calculating elapsed time.
+/shared/projects/hepattn/.pixi/envs/default/lib/python3.12/site-packages/lightning/pytorch/cli.py:544: LightningCLI's args parameter is intended to run from within Python like if it were from the command line. To prevent mistakes it is not recommended to provide both args and command line arguments, got: sys.argv[1:]=['2', 'results_repeat2.json'], args=['--config', '/tmp/ljohnson/tmpc9y0it9o.yaml'].
+Seed set to 42
+Using bfloat16 Automatic Mixed Precision (AMP)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+W1019 12:17:51.819000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/68] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:17:51.829000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/68] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:17:51.856000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/68_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:17:51.865000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/68_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:17:52.099000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/69] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:17:52.108000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/69] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:17:52.739000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/69] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+W1019 12:17:59.391000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/69_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, s96) | Eq(s96, 1)
+W1019 12:17:59.400000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/69_1] _maybe_guard_rel() was called on non-relation expression Eq(s27, 1) | Eq(s28, s27)
+W1019 12:18:00.030000 15034 site-packages/torch/fx/experimental/symbolic_shapes.py:6833] [3/69_1] _maybe_guard_rel() was called on non-relation expression Eq(s94, 1) | Eq(s94, 2)
+model OR w32: FAILED ValueError: Both events must be recorded before calculating elapsed time.

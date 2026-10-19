@@ -1,0 +1,12 @@
+BlockMask alone, N=18792, block 128:    2.50 ms
+BlockMask alone, N=18792, block  64:    2.83 ms
+BlockMask alone, N=18792, block  32:    6.27 ms
+BlockMask alone, N=18792, block  16:   24.51 ms
+flex encoder w64, uncompiled module, block 128:    8.07 ms/event
+flex encoder w64, uncompiled module, block  64:    7.87 ms/event
+flex encoder w64, uncompiled module, block  32:   11.66 ms/event
+flex encoder w64, uncompiled module, block  16:   32.25 ms/event
+flex encoder w64, compiled module, block 128:    3.73 ms/event
+flex encoder w64, compiled module, block  64:    3.24 ms/event
+flex encoder w64, compiled module, block  32:  938.79 ms/event
+flex encoder w64, compiled module, block  16:  201.56 ms/event

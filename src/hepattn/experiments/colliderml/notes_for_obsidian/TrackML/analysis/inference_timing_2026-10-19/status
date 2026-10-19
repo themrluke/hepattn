@@ -1,0 +1,14 @@
+2026-10-19 11:32 repeat 1 start
+2026-10-19 12:00 repeat 1 exit 0
+2026-10-19 12:00 repeat 2 start
+2026-10-19 12:18 repeat 2 exit 0
+2026-10-19 12:18 repeat 3 start
+2026-10-19 12:36 repeat 3 exit 0
+2026-10-19 12:36 ALLDONE
+2026-10-19 12:37 models repeat 1 start
+2026-10-19 12:39 models repeat 1 exit 0
+2026-10-19 12:39 models repeat 2 start
+2026-10-19 12:42 models repeat 2 exit 0
+2026-10-19 12:42 models repeat 3 start
+2026-10-19 12:44 models repeat 3 exit 0
+2026-10-19 12:44 MODELSDONE
