@@ -1,0 +1,53 @@
+# Learning-rate plateau study as a Kubernetes Job: window 64, flex and OR, seeds 42-44, peak learning rate 2e-4 then
+# 1e-4 (default 5e-5), 10 epochs per run (stage 1), two at a time on one H100; see sweep_runs/queue_lr_job.sh.
+# Lifetime 7d (the maximum the cluster accepts). Restart-safe: resubmitting resumes interrupted runs (same Comet experiment).
+#
+#   kubectl create -f sweep_runs/k8s/lr-plateau-job.yaml       # submit
+#   kubectl get pods -n ljohnson -l job-name=lr-plateau          # status
+#   tail sweep_runs/queue_lr.log                                 # what the queue is doing (run logs: logs/*_full.out)
+#   kubectl delete job lr-plateau -n ljohnson                    # stop (runs resume on resubmission)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: lr-plateau
+  namespace: ljohnson
+spec:
+  backoffLimit: 3            # a crashed container restarts the script, which resumes the runs
+  template:
+    metadata:
+      labels:
+        lifetime: "7d"
+        mount-eos: "true"
+        mount-cvmfs: "true"
+        home: "eos"
+    spec:
+      restartPolicy: OnFailure
+      securityContext: {runAsUser: 173047, runAsGroup: 1307}
+      nodeSelector: {nvidia.com/gpu.product: NVIDIA-H100-NVL}
+      containers:
+      - name: train
+        image: registry.cern.ch/ngt/lxplus-like:9
+        workingDir: /shared/projects/hepattn/src/hepattn/experiments/trackml
+        command: ["bash", "-c"]
+        args:
+        - |
+          # explicit cd: the EOS-home pod default overrides workingDir
+          cd /shared/projects/hepattn/src/hepattn/experiments/trackml || exit 1
+          bash sweep_runs/queue_lr_job.sh; rc=$?
+          wait
+          exit $rc
+        resources:
+          # Same as the notebook session: one H100 with its 46 CPUs (even, as the nodes need) and 180 GB
+          requests: {cpu: "46", memory: 180G, nvidia.com/gpu: 1}
+          limits: {cpu: "46", memory: 180G, nvidia.com/gpu: 1}
+        volumeMounts:
+        - {name: shared, mountPath: /shared}
+        - {name: dshm, mountPath: /dev/shm}          # matcher shared-memory buffers and DataLoader workers
+        - {name: scratch, mountPath: /scratch}
+      volumes:
+      - name: shared
+        persistentVolumeClaim: {claimName: shared}
+      - name: dshm
+        emptyDir: {medium: Memory}
+      - name: scratch
+        emptyDir: {sizeLimit: 450G}
