@@ -5,7 +5,8 @@
 # the schedule is still the full 30-epoch one, and the checkpoints stay.
 #
 # Every run's state is an explicit marker in sweep_runs/lr_state/ (v2 of this queue, 21 Oct: v1 resumed runs that had
-# already finished, kept resuming diverged ones and skipped two):
+# already finished, kept resuming diverged ones and skipped two; v3, the same day, stops stop_finished overwriting the
+# main loop's variables):
 #   <run>.done      reached epoch 10; never touched again
 #   <run>.diverged  crashed with a CUDA device-side assert (what a blown-up run does here); a result, never resumed
 # Otherwise: interrupted runs (session or job end) are resumed from their last checkpoint into the same Comet experiment,
@@ -48,7 +49,7 @@ stop_finished() {
     fi
   done
 }
-log "LR queue v2 started in $(hostname): ${#RUNS[@]} planned runs, $STAGE_EPOCHS epochs each, max $MAX_JOBS at a time"
+log "LR queue v3 started in $(hostname): ${#RUNS[@]} planned runs, $STAGE_EPOCHS epochs each, max $MAX_JOBS at a time"
 while true; do
   stop_finished
   remaining=0
