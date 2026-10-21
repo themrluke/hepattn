@@ -32,6 +32,9 @@ running() { local n=0; for k in "${!OURS[@]}"; do alive $k && n=$((n + 1)); done
 last_epoch() { ls logs/$1_2026*/ckpts/epoch=*.ckpt 2>/dev/null | sed 's/.*epoch=\([0-9]*\)-.*/\1/' | sed 's/^0*\([0-9]\)/\1/' | sort -n | tail -1; }
 attempt() { tac "$1" | sed '/^=== /q'; }   # the log since the last resume/stop marker
 stop_finished() {
+  # local: called from inside the main loop, whose own name/e it would otherwise overwrite (v2 did, 21 Oct: it
+  # resumed a live run a second time and started seed 43 under seed 44's name)
+  local name e pid
   for name in "${!OURS[@]}"; do
     alive $name || continue
     e=$(last_epoch $name)
@@ -68,6 +71,7 @@ while true; do
       continue   # training somewhere else
     fi
     while [ "$(running)" -ge $MAX_JOBS ]; do beat; stop_finished; sleep 60; done
+    alive $name && continue   # double-check after the wait, before starting anything
     if [ -n "$e" ]; then
       nohup $Q/resume_run.sh $short > /dev/null 2>&1 &
       OURS[$name]=$!; log "RESUME $name pid=${OURS[$name]} (from epoch $e)"
