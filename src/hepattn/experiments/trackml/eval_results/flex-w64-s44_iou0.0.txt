@@ -1,0 +1,2 @@
+run                          pT cut events particles  DM eff perfect   fake dup (DM)
+flex-w64-s44 iou0.0             1.0    100    110684   96.5%   92.6%   0.6%     0.1%
