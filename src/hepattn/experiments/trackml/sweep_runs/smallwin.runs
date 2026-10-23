@@ -1,0 +1,16 @@
+# Smaller windows, baseline and OR, seeds 42-44 (job small-win). Config suffix and seed per line.
+flex-w16 42
+or-w16 42
+flex-w8 42
+or-w8 42
+flex-w16 43
+or-w16 43
+flex-w8 43
+or-w8 43
+flex-w16 44
+or-w16 44
+flex-w8 44
+or-w8 44
+# one depth pair here so both jobs have about the same amount of work (the rest is in depth.runs)
+flex-w64-L2 42
+or-w64-L2 42

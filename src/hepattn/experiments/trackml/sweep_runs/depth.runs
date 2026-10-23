@@ -1,0 +1,18 @@
+# Fewer encoder layers at window 64, baseline and OR, seeds 42-44 (job depth); 8 layers = the window sweep's w64 runs.
+# The 2-layer seed-42 pair is in smallwin.runs, to balance the two jobs.
+flex-w64-L4 42
+or-w64-L4 42
+flex-w64-L6 42
+or-w64-L6 42
+flex-w64-L2 43
+or-w64-L2 43
+flex-w64-L4 43
+or-w64-L4 43
+flex-w64-L6 43
+or-w64-L6 43
+flex-w64-L2 44
+or-w64-L2 44
+flex-w64-L4 44
+or-w64-L4 44
+flex-w64-L6 44
+or-w64-L6 44
